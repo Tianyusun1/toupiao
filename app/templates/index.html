@@ -37,22 +37,47 @@
     {% if elections %}
         {% for election in elections %}
         <div class="col-md-6 col-lg-4 animate__animated animate__zoomIn" style="animation-delay: {{ loop.index0 * 0.1 }}s;">
-            <div class="glass-card h-100 p-4 d-flex flex-column transition-hover">
+            <div class="glass-card h-100 p-4 d-flex flex-column transition-hover {% if election.time_status == 'ended' %}opacity-75{% endif %}">
                 <div class="d-flex justify-content-between align-items-start mb-3">
-                    <span class="badge bg-success rounded-pill px-3 py-2 shadow-sm">
-                        <i class="fa-solid fa-spinner fa-spin me-1"></i> 进行中
+                    <span class="badge {{ election.badge_class }} rounded-pill px-3 py-2 shadow-sm">
+                        {% if election.time_status == 'active' %}
+                            <i class="fa-solid fa-spinner fa-spin me-1"></i>
+                        {% elif election.time_status == 'upcoming' %}
+                            <i class="fa-solid fa-hourglass-half me-1"></i>
+                        {% else %}
+                            <i class="fa-solid fa-circle-check me-1"></i>
+                        {% endif %}
+                        {{ election.time_label }}
                     </span>
                     <span class="text-muted small">
-                        <i class="fa-regular fa-calendar-check me-1"></i> 截止: {{ election.end_time.strftime('%Y-%m-%d') if election.end_time else '长期有效' }}
+                        <i class="fa-regular fa-calendar-check me-1"></i> 截止: {{ election.end_time.strftime('%Y-%m-%d %H:%M') if election.end_time else '长期有效' }}
                     </span>
                 </div>
+
+                {% if election.image_url %}
+                <div class="mb-3 rounded overflow-hidden" style="height: 120px; background-color: #f8f9fa;">
+                    <img src="{{ election.image_url }}" alt="海报" style="width: 100%; height: 100%; object-fit: cover; {% if election.time_status == 'ended' %}filter: grayscale(1);{% endif %}">
+                </div>
+                {% endif %}
+
                 <h4 class="fw-bold mb-3 text-dark">{{ election.title }}</h4>
                 <p class="text-muted mb-4 small" style="flex-grow: 1; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">
                     {{ election.description }}
                 </p>
-                <div class="border-top pt-3 mt-auto">
-                    <a href="/election/{{ election.id }}" class="btn btn-custom w-100">
-                        进入投票站 <i class="fa-solid fa-chevron-right ms-1" style="font-size: 0.8rem;"></i>
+
+                <div class="border-top pt-3 mt-auto d-flex gap-2">
+                    <a href="/election/{{ election.id }}" class="btn {% if election.time_status == 'ended' %}btn-outline-secondary{% else %}btn-custom{% endif %} flex-grow-1">
+                        {% if election.time_status == 'ended' %}
+                            查看公示结果
+                        {% elif election.time_status == 'upcoming' %}
+                            查看候选项
+                        {% else %}
+                            进入投票站
+                        {% endif %}
+                        <i class="fa-solid fa-chevron-right ms-1" style="font-size: 0.8rem;"></i>
+                    </a>
+                    <a href="/election/{{ election.id }}/results" class="btn btn-outline-primary shadow-sm" style="border-radius: 50px; padding: 10px 20px;" title="查看实时统计大屏">
+                        <i class="fa-solid fa-chart-pie"></i>
                     </a>
                 </div>
             </div>
@@ -62,7 +87,7 @@
         <div class="col-12 text-center py-5">
             <div class="glass-card p-5 d-inline-block animate__animated animate__pulse animate__infinite">
                 <i class="fa-regular fa-face-smile fa-4x text-muted mb-3 opacity-50"></i>
-                <h5 class="text-muted fw-bold">当前暂无正在进行的选举</h5>
+                <h5 class="text-muted fw-bold">当前暂无发布的投票项目</h5>
                 <p class="text-muted small">点击右上方按钮发起一个新的提议吧！</p>
             </div>
         </div>
@@ -70,26 +95,63 @@
 </div>
 
 <div class="modal fade" id="proposeModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content border-0 shadow-lg" style="border-radius: 20px;">
             <div class="modal-header border-0 pb-0">
                 <h5 class="fw-bold pt-3 px-3"><i class="fa-solid fa-lightbulb text-warning me-2"></i>提交投票提议</h5>
                 <button type="button" class="btn-close me-2" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body p-4">
-                <form id="proposeForm">
-                    <div class="mb-4">
+                <form id="proposeForm" enctype="multipart/form-data">
+                    <div class="mb-3">
                         <label class="form-label small fw-bold">项目标题</label>
                         <input type="text" id="prop-title" class="form-control border-0 bg-light py-2" placeholder="例如：关于增加食堂夜宵档口的投票" required>
                     </div>
-                    <div class="mb-4">
+                    <div class="mb-3">
                         <label class="form-label small fw-bold">详细描述</label>
-                        <textarea id="prop-desc" class="form-control border-0 bg-light" rows="4" placeholder="请详细说明您发起此次投票的目的和背景..." required></textarea>
+                        <textarea id="prop-desc" class="form-control border-0 bg-light" rows="3" placeholder="请详细说明您发起此次投票的目的和背景..." required></textarea>
                     </div>
-                    <div class="alert alert-warning py-2 small border-0">
-                        <i class="fa-solid fa-circle-exclamation me-1"></i> 提示：提议提交后需经管理员审核方可公开。
+
+                    <div class="row mb-3">
+                        <div class="col-12 mb-3">
+                            <label class="form-label small fw-bold">项目总宣传海报 (可选)</label>
+                            <input type="file" id="prop-image" class="form-control border-0 bg-light py-2" accept="image/*">
+                        </div>
+                        <div class="col-md-6 mb-2">
+                            <label class="form-label small fw-bold">开始时间</label>
+                            <input type="datetime-local" id="prop-start-time" class="form-control border-0 bg-light py-2" required>
+                        </div>
+                        <div class="col-md-6 mb-2">
+                            <label class="form-label small fw-bold">结束时间</label>
+                            <input type="datetime-local" id="prop-end-time" class="form-control border-0 bg-light py-2" required>
+                        </div>
                     </div>
-                    <div class="d-grid gap-2 mt-4">
+
+                    <div class="mb-4">
+                        <label class="form-label small fw-bold d-flex justify-content-between align-items-center">
+                            <span>设置投票选项 (可为每个选项上传图片)</span>
+                            <button type="button" class="btn btn-sm btn-outline-primary rounded-pill py-0 px-2" onclick="addOption()">
+                                <i class="fa-solid fa-plus text-sm"></i> 添加选项
+                            </button>
+                        </label>
+                        <div id="options-container">
+                            <div class="input-group mb-2 option-group">
+                                <span class="input-group-text border-0 bg-light"><i class="fa-regular fa-circle-dot text-muted"></i></span>
+                                <input type="text" class="form-control border-0 bg-light opt-input" placeholder="选项 1 名称" required>
+                                <input type="file" class="form-control border-0 bg-light opt-image-input" accept="image/*" title="选项独立图片(可选)">
+                            </div>
+                            <div class="input-group mb-2 option-group">
+                                <span class="input-group-text border-0 bg-light"><i class="fa-regular fa-circle-dot text-muted"></i></span>
+                                <input type="text" class="form-control border-0 bg-light opt-input" placeholder="选项 2 名称" required>
+                                <input type="file" class="form-control border-0 bg-light opt-image-input" accept="image/*" title="选项独立图片(可选)">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-warning py-2 small border-0 mb-4">
+                        <i class="fa-solid fa-circle-exclamation me-1"></i> 提示：提议及选项提交后需经管理员审核方可公开。
+                    </div>
+                    <div class="d-grid gap-2">
                         <button type="submit" class="btn btn-custom py-2" id="submitPropBtn">
                             确认提交审核 <i class="fa-solid fa-paper-plane ms-1"></i>
                         </button>
@@ -104,43 +166,99 @@
 
 {% block scripts %}
 <script>
-    // --- 逻辑1：提交提议 ---
+    document.addEventListener('DOMContentLoaded', function() {
+        document.body.appendChild(document.getElementById('proposeModal'));
+    });
+
+    function addOption() {
+        const container = document.getElementById('options-container');
+        const count = container.children.length + 1;
+        const div = document.createElement('div');
+        div.className = 'input-group mb-2 option-group animate__animated animate__fadeIn';
+        div.innerHTML = `
+            <span class="input-group-text border-0 bg-light"><i class="fa-regular fa-circle-dot text-muted"></i></span>
+            <input type="text" class="form-control border-0 bg-light opt-input" placeholder="选项 ${count} 名称" required>
+            <input type="file" class="form-control border-0 bg-light opt-image-input" accept="image/*" title="选项独立图片(可选)">
+            <button class="btn btn-outline-danger border-0 bg-light" type="button" onclick="this.parentElement.remove()" title="删除该选项">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        `;
+        container.appendChild(div);
+    }
+
     document.getElementById('proposeForm').addEventListener('submit', function(e) {
         e.preventDefault();
         const btn = document.getElementById('submitPropBtn');
-        const title = document.getElementById('prop-title').value;
-        const desc = document.getElementById('prop-desc').value;
+
+        const title = document.getElementById('prop-title').value.trim();
+        const desc = document.getElementById('prop-desc').value.trim();
+        const startTime = document.getElementById('prop-start-time').value;
+        const endTime = document.getElementById('prop-end-time').value;
+        const imageFile = document.getElementById('prop-image').files[0];
+
+        const formData = new FormData();
+        formData.append('title', title);
+        formData.append('description', desc);
+        if (startTime) formData.append('start_time', startTime);
+        if (endTime) formData.append('end_time', endTime);
+        if (imageFile) formData.append('image', imageFile);
+
+        const optionsTextArray = [];
+        const optionGroups = document.querySelectorAll('.option-group');
+        let validIndex = 0;
+
+        optionGroups.forEach(group => {
+            const textValue = group.querySelector('.opt-input').value.trim();
+            if (textValue !== '') {
+                optionsTextArray.push(textValue);
+                const optImageFile = group.querySelector('.opt-image-input').files[0];
+                if (optImageFile) {
+                    formData.append(`option_image_${validIndex}`, optImageFile);
+                }
+                validIndex++;
+            }
+        });
+
+        if (optionsTextArray.length < 2) {
+            Swal.fire('提示', '请至少提供 2 个有效的投票选项！', 'warning');
+            return;
+        }
+
+        formData.append('options', JSON.stringify(optionsTextArray));
 
         btn.disabled = true;
-        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i> 正在上传提议...';
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i> 正在上传提议及附件...';
 
         fetch('/api/vote/propose', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: title, description: desc })
+            body: formData
         })
         .then(res => res.json())
         .then(data => {
             if (data.code === 200) {
-                // 关闭模态框并成功提示
                 const modal = bootstrap.Modal.getInstance(document.getElementById('proposeModal'));
                 modal.hide();
                 Swal.fire({
                     title: '提交成功！',
-                    text: '您的提议已进入待审核队列，可在“我的空间”查看进度。',
+                    text: '您的提议和各选项图片已进入待审核队列。',
                     icon: 'success',
                     confirmButtonColor: '#4776E6'
+                }).then(() => {
+                    window.location.reload();
                 });
-                document.getElementById('proposeForm').reset();
             } else {
                 Swal.fire('提交失败', data.msg, 'error');
+                btn.disabled = false;
+                btn.innerHTML = '确认提交审核 <i class="fa-solid fa-paper-plane ms-1"></i>';
             }
+        })
+        .catch(err => {
+            console.error("请求报错:", err);
+            Swal.fire('系统异常', '无法连接到后端，请查看控制台报错', 'error');
             btn.disabled = false;
-            btn.innerHTML = '确认提交审核 <i class="fa-solid fa-paper-plane ms-1"></i>';
         });
     });
 
-    // --- 逻辑2：注销登录 ---
     function logout() {
         Swal.fire({
             title: '确认退出登录?',

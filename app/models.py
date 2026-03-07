@@ -15,13 +15,13 @@ class User(db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     role = db.Column(db.String(20), default='student')  # 'student' 或 'admin'
 
-    # --- 新增：身份硬核绑定字段 ---
+    # --- 身份硬核绑定字段 ---
     department = db.Column(db.String(50))  # 学院
     major = db.Column(db.String(50))  # 专业
     class_name = db.Column(db.String(50))  # 班级
     entry_year = db.Column(db.String(10))  # 入学年份
 
-    # --- 新增：审核状态与个人主页 ---
+    # --- 审核状态与个人主页 ---
     is_approved = db.Column(db.Boolean, default=False)  # 是否通过管理员审核
     bio = db.Column(db.Text)  # 个人简介 (用于个人主页)
     avatar = db.Column(db.String(100), default='default.png')  # 头像路径
@@ -41,7 +41,10 @@ class Election(db.Model):
     title = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text)
 
-    # --- 新增：UGC 提议逻辑 ---
+    # --- 图片上传海报字段 (可选项) ---
+    image_url = db.Column(db.String(255), nullable=True)
+
+    # --- UGC 提议逻辑 ---
     proposer_id = db.Column(db.Integer, db.ForeignKey('users.id'))  # 谁提议的
     review_status = db.Column(db.String(20), default='pending')  # 审核状态: pending(待审), approved(通过), rejected(驳回)
     admin_feedback = db.Column(db.Text)  # 管理员反馈/驳回理由
@@ -53,7 +56,7 @@ class Election(db.Model):
 
 
 class Candidate(db.Model):
-    """候选人表：支持资质审核"""
+    """候选人/选项表：支持独立附件与资质审核"""
     __tablename__ = 'candidates'
     id = db.Column(db.Integer, primary_key=True)
     election_id = db.Column(db.Integer, db.ForeignKey('elections.id'), nullable=False)
@@ -61,7 +64,10 @@ class Candidate(db.Model):
     department = db.Column(db.String(50))
     manifesto = db.Column(db.Text)  # 竞选宣言
 
-    # --- 新增：资质审核 ---
+    # --- 新增：为每个选项/候选人独立上传图片/附件 ---
+    image_url = db.Column(db.String(255), nullable=True)
+
+    # --- 资质审核 ---
     is_qualified = db.Column(db.Boolean, default=False)  # 资质是否审核通过
     qual_materials = db.Column(db.Text)  # 资质证明材料描述
 
@@ -76,7 +82,7 @@ class VoteRecord(db.Model):
     vote_time = db.Column(db.DateTime, default=datetime.utcnow)
     ip_address = db.Column(db.String(50))
 
-    # --- 新增：投票安全凭证 (区块链思想) ---
+    # --- 投票安全凭证 (区块链思想) ---
     # 生成方式：hash(user_id + election_id + time)
     vote_hash = db.Column(db.String(64), unique=True)
 

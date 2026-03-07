@@ -7,48 +7,124 @@
 {% endblock %}
 
 {% block content %}
+{% if not_started %}
+<div class="alert alert-warning shadow-sm mb-4 border-0 animate__animated animate__fadeIn">
+    <i class="fa-solid fa-hourglass-start me-2 fs-5 align-middle"></i>
+    <strong>投票尚未开始！</strong> 本次活动将于 {{ election.start_time.strftime('%Y-%m-%d %H:%M') }} 准时开启，请稍后再来。
+</div>
+{% elif is_expired %}
+<div class="alert alert-secondary shadow-sm mb-4 border-0 animate__animated animate__fadeIn">
+    <i class="fa-solid fa-clock-rotate-left me-2 fs-5 align-middle"></i>
+    <strong>投票已截止！</strong> 本次投票已于 {{ election.end_time.strftime('%Y-%m-%d %H:%M') }} 结束，当前显示为最终票数排名。
+</div>
+{% elif has_voted %}
+<div class="alert alert-success shadow-sm mb-4 border-0 animate__animated animate__pulse">
+    <i class="fa-solid fa-circle-check me-2 fs-5 align-middle"></i>
+    <strong>您已参与过本次投票！</strong> 感谢您的支持，当前显示为实时得票排名。
+</div>
+{% endif %}
+
 <div class="glass-card p-4 mb-5 animate__animated animate__fadeInDown">
     <div class="row align-items-center">
+        {% if election.image_url %}
+        <div class="col-md-3 mb-3 mb-md-0">
+            <img src="{{ election.image_url }}" alt="投票海报" class="img-fluid rounded shadow-sm" style="max-height: 180px; width: 100%; object-fit: cover; {% if is_expired %}filter: grayscale(0.8);{% endif %}">
+        </div>
+        <div class="col-md-5">
+        {% else %}
         <div class="col-md-8">
+        {% endif %}
             <h2 class="fw-bolder mb-2 text-primary">{{ election.title }}</h2>
             <p class="text-muted mb-0"><i class="fa-solid fa-circle-info me-1"></i> {{ election.description }}</p>
         </div>
+
         <div class="col-md-4 text-md-end mt-3 mt-md-0">
-            <div class="bg-light rounded-pill px-4 py-2 d-inline-block shadow-sm">
-                <span class="text-danger fw-bold"><i class="fa-regular fa-clock"></i> 距离结束还有：</span>
-                <span id="countdown" class="ms-1" data-endtime="{{ election.end_time }}">计算中...</span>
+            <div class="bg-light rounded-pill px-4 py-3 d-inline-block shadow-sm border {% if is_expired %}border-secondary{% elif not_started %}border-warning{% else %}border-success{% endif %}">
+                <span class="{% if is_expired %}text-muted{% else %}text-danger{% endif %} fw-bold">
+                    <i class="fa-regular fa-clock"></i> {% if is_expired %}结束于：{% else %}截止时间：{% endif %}
+                </span><br>
+                <span class="ms-1 text-dark" style="font-size: 0.9rem;">
+                    {{ election.end_time.strftime('%Y-%m-%d %H:%M') if election.end_time else '长期有效' }}
+                </span>
             </div>
         </div>
     </div>
 </div>
 
-<h4 class="fw-bold mb-4"><i class="fa-solid fa-users text-primary me-2"></i> 候选人名单</h4>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold mb-0"><i class="fa-solid fa-ranking-star text-warning me-2"></i> {% if is_expired %}最终得票榜单{% else %}实时得票榜单{% endif %}</h4>
+    <a href="/election/{{ election.id }}/results" class="btn btn-outline-primary btn-sm rounded-pill">
+        <i class="fa-solid fa-chart-pie"></i> 查看统计图表
+    </a>
+</div>
+
 <div class="row g-4">
     {% if candidates %}
         {% for candidate in candidates %}
         <div class="col-md-6 col-lg-3 animate__animated animate__fadeInUp" style="animation-delay: {{ loop.index0 * 0.1 }}s;">
-            <div class="glass-card p-4 text-center h-100 d-flex flex-column transition-hover">
-                <div class="mx-auto mb-3 bg-white rounded-circle shadow-sm d-flex align-items-center justify-content-center" style="width: 100px; height: 100px; font-size: 2.5rem; color: #4776E6;">
-                    <i class="fa-solid fa-user-tie"></i>
+            <div class="glass-card p-4 text-center h-100 d-flex flex-column transition-hover position-relative {% if is_expired %}opacity-85{% endif %}">
+
+                <div class="position-absolute top-0 start-0 m-3">
+                    {% if loop.index == 1 %}
+                        <span class="badge bg-warning text-dark fs-6 shadow-sm"><i class="fa-solid fa-crown"></i> TOP 1</span>
+                    {% elif loop.index == 2 %}
+                        <span class="badge bg-secondary fs-6 shadow-sm">TOP 2</span>
+                    {% elif loop.index == 3 %}
+                        <span class="badge text-white fs-6 shadow-sm" style="background-color: #cd7f32;">TOP 3</span>
+                    {% else %}
+                        <span class="badge bg-light text-dark border fs-6 shadow-sm">NO.{{ loop.index }}</span>
+                    {% endif %}
                 </div>
-                <h4 class="fw-bold text-dark">{{ candidate.name }}</h4>
-                <span class="badge bg-secondary rounded-pill mb-3 mx-auto">{{ candidate.department }}</span>
+
+                {% if candidate.image_url %}
+                <div class="mx-auto mb-3 mt-4 rounded-circle shadow-sm overflow-hidden border border-2 border-white" style="width: 110px; height: 110px;">
+                    <img src="{{ candidate.image_url }}" alt="选项图片" style="width: 100%; height: 100%; object-fit: cover; {% if is_expired %}filter: grayscale(0.6);{% endif %}">
+                </div>
+                {% else %}
+                <div class="mx-auto mb-3 mt-4 bg-white rounded-circle shadow-sm d-flex align-items-center justify-content-center border border-2 border-white" style="width: 110px; height: 110px; font-size: 2.5rem; color: #4776E6;">
+                    <i class="fa-solid fa-image text-muted opacity-25"></i>
+                </div>
+                {% endif %}
+
+                <h4 class="fw-bold text-dark mb-1">{{ candidate.name }}</h4>
+                <div class="mb-3">
+                    <span class="fs-4 fw-bolder text-primary">{{ candidate.vote_count }}</span> <span class="text-muted small">票</span>
+                </div>
+
                 <p class="text-muted small text-start" style="flex-grow: 1;">
                     <i class="fa-solid fa-quote-left text-primary opacity-50 me-1"></i>
                     {{ candidate.manifesto }}
                 </p>
-                <button class="btn btn-custom w-100 mt-3 vote-btn" 
-                        data-cid="{{ candidate.id }}" 
-                        data-cname="{{ candidate.name }}" 
-                        data-eid="{{ election.id }}">
-                    <i class="fa-solid fa-check-to-slot me-1"></i> 投TA一票
-                </button>
+
+                {% if can_vote %}
+                    <button class="btn btn-custom w-100 mt-3 vote-btn"
+                            data-cid="{{ candidate.id }}"
+                            data-cname="{{ candidate.name }}"
+                            data-eid="{{ election.id }}">
+                        <i class="fa-solid fa-check-to-slot me-1"></i> 投TA一票
+                    </button>
+                {% else %}
+                    <button class="btn btn-secondary w-100 mt-3" disabled style="opacity: 0.6;">
+                        {% if has_voted %}
+                            <i class="fa-solid fa-check me-1"></i> 您已投票
+                        {% elif not_started %}
+                            <i class="fa-solid fa-lock me-1"></i> 尚未开启
+                        {% elif is_expired %}
+                            <i class="fa-solid fa-ban me-1"></i> 已截止
+                        {% else %}
+                            <i class="fa-solid fa-lock me-1"></i> 暂时锁定
+                        {% endif %}
+                    </button>
+                {% endif %}
             </div>
         </div>
         {% endfor %}
     {% else %}
         <div class="col-12 text-center py-5">
-            <p class="text-muted">暂无候选人信息</p>
+            <div class="glass-card p-5 d-inline-block opacity-75">
+                <i class="fa-regular fa-folder-open fa-3x text-muted mb-3"></i>
+                <p class="text-muted mb-0">该投票暂无候选选项</p>
+            </div>
         </div>
     {% endif %}
 </div>
@@ -56,26 +132,24 @@
 
 {% block scripts %}
 <script>
-    // 监听所有投票按钮的点击事件
+    // 逻辑保持不变，但现在的 vote-btn 只会在 can_vote 为真时渲染到 DOM 中
     document.querySelectorAll('.vote-btn').forEach(button => {
         button.addEventListener('click', function() {
             const candidateId = this.getAttribute('data-cid');
             const candidateName = this.getAttribute('data-cname');
             const electionId = this.getAttribute('data-eid');
 
-            // 弹出精美的高级确认框
             Swal.fire({
                 title: '请确认您的选择',
-                html: `您确定要将神圣的一票投给 <b>${candidateName}</b> 吗？<br><small class='text-danger'>投票后将无法更改！</small>`,
+                html: `您确定要将神圣的一票投给 <b>${candidateName}</b> 吗？<br><small class='text-danger'>投票后不可更改，且每人仅限一票！</small>`,
                 icon: 'question',
                 showCancelButton: true,
                 confirmButtonColor: '#4776E6',
                 cancelButtonColor: '#6c757d',
-                confirmButtonText: '确认投票',
+                confirmButtonText: '<i class="fa-solid fa-paper-plane me-1"></i> 确认投票',
                 cancelButtonText: '让我再想想',
-                showLoaderOnConfirm: true, // 开启按钮加载动画
+                showLoaderOnConfirm: true,
                 preConfirm: () => {
-                    // 调用我们之前写好的 /api/vote/do_vote 后端接口
                     return fetch('/api/vote/do_vote', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -93,11 +167,11 @@
                 if (result.isConfirmed) {
                     Swal.fire({
                         title: '投票成功！',
-                        text: '感谢您的参与，结果正在火速统计中。',
-                        icon: 'success'
+                        text: '感谢您的参与，您的安全投票凭证已生成。',
+                        icon: 'success',
+                        confirmButtonColor: '#4776E6'
                     }).then(() => {
-                        // 投完票强制返回大厅，防止原地重复点
-                        window.location.href = '/'; 
+                        window.location.reload();
                     });
                 }
             });

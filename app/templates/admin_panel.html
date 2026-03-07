@@ -12,14 +12,14 @@
         <div class="glass-card p-4 sticky-top" style="top: 100px;">
             <h5 class="fw-bold mb-4 text-primary"><i class="fa-solid fa-screwdriver-wrench me-2"></i>管理中心</h5>
             <div class="nav flex-column nav-pills" id="adminTabs" role="tablist">
-                <button class="nav-link active text-start mb-2" id="users-tab" data-bs-toggle="pill" data-bs-target="#tab-users">
+                <button class="nav-link active text-start mb-2 shadow-sm" id="users-tab" data-bs-toggle="pill" data-bs-target="#tab-users" onclick="loadPendingUsers()">
                     <i class="fa-solid fa-user-check me-2"></i> 身份核验 <span class="badge bg-danger ms-2" id="user-count">0</span>
                 </button>
-                <button class="nav-link text-start mb-2" id="elections-tab" data-bs-toggle="pill" data-bs-target="#tab-elections">
+                <button class="nav-link text-start mb-2 shadow-sm" id="elections-tab" data-bs-toggle="pill" data-bs-target="#tab-elections" onclick="loadPendingElections()">
                     <i class="fa-solid fa-clipboard-check me-2"></i> 提议审批 <span class="badge bg-warning ms-2" id="election-count">0</span>
                 </button>
-                <button class="nav-link text-start" id="stats-tab" data-bs-toggle="pill" data-bs-target="#tab-stats">
-                    <i class="fa-solid fa-chart-pie me-2"></i> 数据总览
+                <button class="nav-link text-start shadow-sm" id="stats-tab" data-bs-toggle="pill" data-bs-target="#tab-stats" onclick="loadAllElections()">
+                    <i class="fa-solid fa-file-shield me-2"></i> 数据审计与导出
                 </button>
             </div>
         </div>
@@ -27,9 +27,9 @@
 
     <div class="col-lg-9">
         <div class="tab-content" id="adminTabsContent">
-            
+
             <div class="tab-pane fade show active" id="tab-users">
-                <div class="glass-card p-4">
+                <div class="glass-card p-4 shadow">
                     <h4 class="fw-bold mb-4">待审核学生名单</h4>
                     <div class="table-responsive">
                         <table class="table table-hover align-middle">
@@ -38,29 +38,52 @@
                                     <th>学号</th>
                                     <th>姓名</th>
                                     <th>院系专业</th>
-                                    <th>操作</th>
+                                    <th class="text-center">操作</th>
                                 </tr>
                             </thead>
                             <tbody id="pending-users-body">
-                                </tbody>
+                                <tr><td colspan="4" class="text-center py-4 text-muted">正在加载数据...</td></tr>
+                            </tbody>
                         </table>
                     </div>
                 </div>
             </div>
 
             <div class="tab-pane fade" id="tab-elections">
-                <div class="glass-card p-4">
+                <div class="glass-card p-4 shadow">
                     <h4 class="fw-bold mb-4">待审批投票项目</h4>
                     <div id="pending-elections-list">
-                        </div>
+                        <p class="text-center py-4 text-muted">正在加载提议...</p>
+                    </div>
                 </div>
             </div>
 
             <div class="tab-pane fade" id="tab-stats">
-                <div class="glass-card p-5 text-center">
-                    <i class="fa-solid fa-rocket fa-3x text-primary mb-3"></i>
-                    <h4>系统运行平稳</h4>
-                    <p class="text-muted">实时监控模块已就绪，正在准备数据对接...</p>
+                <div class="glass-card p-4 shadow">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h4 class="fw-bold mb-0">安全审计与报表导出</h4>
+                        <button class="btn btn-sm btn-outline-primary rounded-pill" onclick="loadAllElections()">
+                            <i class="fa-solid fa-rotate me-1"></i> 刷新列表
+                        </button>
+                    </div>
+                    <p class="text-muted small mb-4">您可以导出包含 **SHA-256 安全指纹** 的全量投票数据，用于防篡改审计。 [cite: 2026-03-04]</p>
+
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>项目编号</th>
+                                    <th>标题</th>
+                                    <th>截止时间</th>
+                                    <th>当前状态</th>
+                                    <th class="text-center">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="all-elections-body">
+                                <tr><td colspan="5" class="text-center py-4 text-muted">点击标签页或刷新按钮加载数据...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 
@@ -70,16 +93,16 @@
 {% endblock %}
 
 {% block scripts %}
+
 <script>
-    // 页面加载完成后立即拉取待办事项
     document.addEventListener('DOMContentLoaded', () => {
         loadPendingUsers();
         loadPendingElections();
     });
 
-    // 1. 加载并渲染待审核用户
+    // --- 1. 用户审核逻辑 ---
     function loadPendingUsers() {
-        fetch('/admin/users/pending')
+        fetch('/api/admin/users/pending')
             .then(res => res.json())
             .then(data => {
                 const body = document.getElementById('pending-users-body');
@@ -89,63 +112,122 @@
                         <td><span class="badge bg-light text-dark border">${u.student_id}</span></td>
                         <td><b class="text-primary">${u.name}</b></td>
                         <td><small>${u.department}<br>${u.major}</small></td>
-                        <td>
-                            <button class="btn btn-success btn-sm rounded-pill px-3" onclick="handleUser(${u.id}, 'pass')">通过</button>
+                        <td class="text-center">
+                            <button class="btn btn-success btn-sm rounded-pill px-3 me-1" onclick="handleUser(${u.id}, 'pass')">通过</button>
                             <button class="btn btn-outline-danger btn-sm rounded-pill px-3" onclick="handleUser(${u.id}, 'reject')">驳回</button>
                         </td>
                     </tr>
                 `).join('');
-                if(data.data.length === 0) body.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">暂无待审核申请</td></tr>';
+                if(data.data.length === 0) body.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-5">所有注册申请已处理完毕</td></tr>';
             });
     }
 
-    // 2. 加载并渲染待审批提议
+    function handleUser(id, action) {
+        fetch('/api/admin/users/approve', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({user_id: id, action: action})
+        }).then(res => res.json()).then(data => {
+            Swal.fire('审核反馈', data.msg, 'success');
+            loadPendingUsers();
+        });
+    }
+
+    // --- 2. 提议审批逻辑 ---
     function loadPendingElections() {
-        fetch('/admin/elections/pending')
+        fetch('/api/admin/elections/pending')
             .then(res => res.json())
             .then(data => {
                 const list = document.getElementById('pending-elections-list');
                 document.getElementById('election-count').innerText = data.data.length;
                 list.innerHTML = data.data.map(e => `
-                    <div class="card border-0 shadow-sm mb-3 p-3" style="background: rgba(255,255,255,0.5);">
+                    <div class="card border-0 shadow-sm mb-3 p-3 animate__animated animate__fadeIn" style="background: rgba(255,255,255,0.6);">
                         <div class="d-flex justify-content-between align-items-center">
                             <div>
-                                <h5 class="fw-bold mb-1">${e.title}</h5>
-                                <p class="small text-muted mb-0">提议人: ${e.proposer_name} | 详情: ${e.description}</p>
+                                <h6 class="fw-bold mb-1">${e.title}</h6>
+                                <p class="small text-muted mb-0">提议人: <b>${e.proposer_name}</b> | 描述: ${e.description}</p>
                             </div>
-                            <div>
-                                <button class="btn btn-primary btn-sm" onclick="handleElection(${e.id}, 'approve')">准予发布</button>
-                                <button class="btn btn-light btn-sm" onclick="handleElection(${e.id}, 'reject')">拒绝</button>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-primary btn-sm rounded-pill px-3" onclick="handleElection(${e.id}, 'approve')">准予发布</button>
+                                <button class="btn btn-outline-secondary btn-sm rounded-pill px-3" onclick="handleElection(${e.id}, 'reject')">拒绝</button>
                             </div>
                         </div>
                     </div>
                 `).join('');
-                if(data.data.length === 0) list.innerHTML = '<p class="text-center text-muted py-4">暂无提议项目</p>';
+                if(data.data.length === 0) list.innerHTML = '<p class="text-center text-muted py-5">当前没有待处理的投票提议</p>';
             });
     }
 
-    // 处理用户审核
-    function handleUser(id, action) {
-        fetch('/admin/users/approve', {
+    function handleElection(id, action) {
+        if (action === 'reject') {
+            Swal.fire({
+                title: '驳回提议',
+                input: 'textarea',
+                inputLabel: '请输入驳回理由',
+                inputPlaceholder: '学生将会在其个人中心看到此反馈...',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                confirmButtonText: '确认驳回'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    sendReviewRequest(id, 'reject', result.value);
+                }
+            });
+        } else {
+            sendReviewRequest(id, 'approve');
+        }
+    }
+
+    function sendReviewRequest(id, action, feedback = '') {
+        fetch('/api/admin/elections/review', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({user_id: id, action: action})
+            body: JSON.stringify({election_id: id, action: action, feedback: feedback})
         }).then(res => res.json()).then(data => {
-            showMessage(data.msg);
-            loadPendingUsers();
+            Swal.fire('审批成功', data.msg, 'success');
+            loadPendingElections();
         });
     }
 
-    // 处理提议审核
-    function handleElection(id, action) {
-        fetch('/admin/elections/review', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({election_id: id, action: action})
-        }).then(res => res.json()).then(data => {
-            showMessage(data.msg);
-            loadPendingElections();
-        });
+    // --- 3. 数据导出逻辑 (核心修复点) ---
+    function loadAllElections() {
+        const body = document.getElementById('all-elections-body');
+        body.innerHTML = '<tr><td colspan="5" class="text-center py-4">正在检索全量项目...</td></tr>';
+
+        fetch('/api/admin/elections/all')
+            .then(res => res.json())
+            .then(data => {
+                body.innerHTML = data.data.map(e => `
+                    <tr>
+                        <td><span class="text-muted small">#${e.id}</span></td>
+                        <td><b class="text-dark">${e.title}</b></td>
+                        <td><small class="text-muted">${e.end_time}</small></td>
+                        <td>
+                            <span class="badge rounded-pill ${getStatusClass(e.status)}">
+                                ${e.status.toUpperCase()}
+                            </span>
+                        </td>
+                        <td class="text-center">
+                            <a href="/api/admin/export/${e.id}" class="btn btn-sm btn-primary rounded-pill px-3 shadow-sm">
+                                <i class="fa-solid fa-file-csv me-1"></i> 导出报表
+                            </a>
+                        </td>
+                    </tr>
+                `).join('');
+                if(data.data.length === 0) body.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-5">暂无已审核项目可供审计</td></tr>';
+            })
+            .catch(err => {
+                body.innerHTML = '<tr><td colspan="5" class="text-center text-danger py-4">数据加载失败，请检查后端连接</td></tr>';
+            });
+    }
+
+    function getStatusClass(status) {
+        switch(status) {
+            case 'active': return 'bg-success';
+            case 'ended': return 'bg-secondary';
+            case 'draft': return 'bg-info';
+            default: return 'bg-dark';
+        }
     }
 </script>
 {% endblock %}

@@ -40,7 +40,7 @@
                         提交注册申请 <i class="fa-solid fa-chevron-right ms-1" style="font-size: 0.7rem;"></i>
                     </a>
                 </div>
-                <a href="#" class="text-muted text-decoration-none" style="font-size: 0.75rem;" onclick="showMessage('请联系校团委管理员重置密码', 'info')">忘记密码？</a>
+                <a href="#" class="text-muted text-decoration-none" style="font-size: 0.75rem;" onclick="Swal.fire('请联系校团委管理员重置密码', '', 'info')">忘记密码？</a>
             </div>
         </div>
     </div>
@@ -48,37 +48,62 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdn.bootcdn.net/ajax/libs/jsencrypt/3.3.2/jsencrypt.min.js"></script>
+
 <script>
+    // 注意：这里的公钥必须与后端 config.py 中的私钥配对
+    // 为了演示，这里放置一个占位符，实际使用时请从后端获取或保持一致
+    const PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
+MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCs10mGwu4ex3jHFDpaQp+FNAir
+ec+UVkdR6pRcdViwSD1FQnpNRrxrTJGy4XeubsTt8MygeOYWoJLJqJk9Oezi5hJx
+5fFvA7eHeo0Q6txHNFlynf19MH4Hb7dRBt05PAoZcjiZJa/J1WOehfvp19IrnHBE
+iIcGyxA+qaoBgWIGcwIDAQAB
+-----END PUBLIC KEY-----`;
+
     document.getElementById('loginForm').addEventListener('submit', function(e) {
         e.preventDefault();
         const studentId = document.getElementById('student_id').value;
-        const password = document.getElementById('password').value;
+        const passwordPlain = document.getElementById('password').value;
         const btn = document.getElementById('loginBtn');
 
-        // 开启高级加载动画
+        // 1. 开启高级加载动画
         btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i> 安全核验中...';
         btn.disabled = true;
 
+        // 2. 核心逻辑：执行 RSA 前端加密
+        const encryptor = new JSEncrypt();
+        encryptor.setPublicKey(PUBLIC_KEY);
+        const encryptedPassword = encryptor.encrypt(passwordPlain);
+
+        if (!encryptedPassword) {
+            Swal.fire('安全组件加载失败', '请刷新页面重试', 'error');
+            btn.innerHTML = '<i class="fa-solid fa-right-to-bracket me-2"></i> 立即登录';
+            btn.disabled = false;
+            return;
+        }
+
+        // 3. 发送加密后的密码到后端
         fetch('/auth/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ student_id: studentId, password: password })
+            body: JSON.stringify({
+                student_id: studentId,
+                password: encryptedPassword // 发送的是密文
+            })
         })
         .then(res => res.json())
         .then(data => {
             if (data.code === 200) {
-                // 判断是否通过审核，给用户最直观的反馈
                 if (data.data.is_approved === false && data.data.role !== 'admin') {
                     Swal.fire({
                         title: '登录受限',
-                        text: '您的账号已注册，但尚未通过管理员审核。请耐心等待学籍核验！',
+                        text: '您的账号已注册，但尚未通过管理员审核。',
                         icon: 'warning',
                         confirmButtonColor: '#4776E6'
                     });
                     btn.innerHTML = '<i class="fa-solid fa-right-to-bracket me-2"></i> 立即登录';
                     btn.disabled = false;
                 } else {
-                    // 登录成功
                     Swal.fire({
                         title: '登录成功！',
                         text: '欢迎回来，' + data.data.name,
@@ -86,11 +111,10 @@
                         timer: 1500,
                         showConfirmButton: false
                     }).then(() => {
-                        window.location.href = '/'; // 刷新或跳转到主页
+                        window.location.href = '/';
                     });
                 }
             } else {
-                // 账号密码错误提示
                 Swal.fire({
                     title: '登录失败',
                     text: data.msg,
@@ -102,7 +126,7 @@
             }
         })
         .catch(err => {
-            showMessage('无法连接到服务器，请检查后端状态', 'error');
+            Swal.fire('网络异常', '无法连接到服务器，请检查后端状态', 'error');
             btn.innerHTML = '<i class="fa-solid fa-right-to-bracket me-2"></i> 立即登录';
             btn.disabled = false;
         });

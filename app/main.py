@@ -1,5 +1,6 @@
 from flask import Blueprint, render_template, session, redirect, url_for
-from app.models import Election, Candidate  # 引入数据库模型，用来查投票数据
+from app.models import Election, Candidate, VoteRecord
+from datetime import datetime  # 核心：引入时间模块
 
 # 创建一个前端展示模块的蓝图
 main_bp = Blueprint('main', __name__)
@@ -7,56 +8,109 @@ main_bp = Blueprint('main', __name__)
 
 @main_bp.route('/')
 def index():
-    """网站的主入口：投票大厅"""
-    # 如果用户没有登录，直接返回炫酷的 login.html 登录页
+    """网站的主入口：带时间自动分类的投票大厅"""
+    # 如果用户没有登录，直接返回登录页
     if 'user_id' not in session:
         return render_template('login.html')
 
-    # 【核心逻辑】：如果用户已经登录了，去数据库查出所有正在进行中（active）的选举活动
-    active_elections = Election.query.filter_by(status='active').all()
+    now = datetime.now()
 
-    # 获取当前登录用户的名字和权限
+    # --- 核心改进：自动化状态计算逻辑 ---
+    # 1. 查出所有审核通过(approved)的投票项目
+    all_approved = Election.query.filter_by(review_status='approved').all()
+
+    # 2. 为每个项目动态打上时间标签，用于前端显示
+    for e in all_approved:
+        if e.end_time and now > e.end_time:
+            e.time_label = '已结束'
+            e.time_status = 'ended'
+            e.badge_class = 'bg-secondary'
+        elif e.start_time and now < e.start_time:
+            e.time_label = '预热中'
+            e.time_status = 'upcoming'
+            e.badge_class = 'bg-warning text-dark'
+        else:
+            e.time_label = '进行中'
+            e.time_status = 'active'
+            e.badge_class = 'bg-success'
+
+    # 获取当前登录用户信息
     name = session.get('name')
     role = session.get('role')
 
-    # 把用户信息和查出来的选举活动数据，全部扔给高级模板 index.html 去渲染
+    # 将处理好“时间标签”的项目传给 index.html
     return render_template('index.html',
                            name=name,
                            role=role,
-                           elections=active_elections)
+                           elections=all_approved,
+                           now=now)
 
 
 @main_bp.route('/election/<int:election_id>')
 def election_detail(election_id):
-    """选举详情页：点击卡片后进入的投票页面"""
-    # 没登录的话，一脚踢回首页去登录
+    """选举详情页：集成排名计算与时间锁定逻辑"""
     if 'user_id' not in session:
         return redirect(url_for('main.index'))
 
-    # 根据地址栏传过来的 ID，查出这场选举的具体信息 (如果乱输ID找不到就会报404)
-    election = Election.query.get_or_404(election_id)
+    user_id = session.get('user_id')
+    now = datetime.now()
 
-    # 查出这场选举下面绑定的所有候选人
+    # 查出投票信息
+    election = Election.query.get_or_404(election_id)
     candidates = Candidate.query.filter_by(election_id=election_id).all()
 
-    # 把选举信息和候选人名单扔给详情页去渲染卡片
-    return render_template('election_detail.html', election=election, candidates=candidates)
+    # --- 1. 计算实时票数与排名 ---
+    for candidate in candidates:
+        candidate.vote_count = VoteRecord.query.filter_by(candidate_id=candidate.id).count()
+
+    # 按票数降序排序
+    candidates.sort(key=lambda x: getattr(x, 'vote_count', 0), reverse=True)
+
+    # --- 2. 判定当前用户的投票权利 ---
+    # a. 检查是否投过票
+    has_voted = VoteRecord.query.filter_by(user_id=user_id, election_id=election_id).first() is not None
+
+    # b. 核心：检查时间状态
+    is_expired = election.end_time and now > election.end_time
+    not_started = election.start_time and now < election.start_time
+
+    # 最终决定按钮状态的布尔值：如果是过期、没开始或者已经投过，都不能再点
+    can_vote = (not has_voted) and (not is_expired) and (not not_started) and (election.status == 'active')
+
+    return render_template('election_detail.html',
+                           election=election,
+                           candidates=candidates,
+                           has_voted=has_voted,
+                           is_expired=is_expired,
+                           not_started=not_started,
+                           can_vote=can_vote)
+
+
+@main_bp.route('/election/<int:election_id>/results')
+def election_results(election_id):
+    """数据可视化统计大屏"""
+    if 'user_id' not in session:
+        return redirect(url_for('main.index'))
+    Election.query.get_or_404(election_id)
+    return render_template('results.html', election_id=election_id)
+
 
 @main_bp.route('/register')
 def register_page():
-    """跳转到注册页面"""
     return render_template('register.html')
+
 
 @main_bp.route('/profile')
 def profile_page():
-    """个人主页：查看投票凭证和提议进度"""
     if 'user_id' not in session:
         return redirect(url_for('main.index'))
     return render_template('profile.html', name=session.get('name'))
 
-# 先从 app.admin 引入权限拦截器
+
+# 权限拦截器
 from app.admin import admin_required
 from app.auth import login_required
+
 
 @main_bp.route('/admin/dashboard')
 @login_required
