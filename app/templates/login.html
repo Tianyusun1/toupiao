@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center align-items-center animate__animated animate__fadeIn" style="min-height: 75vh;">
+    <div class="col-md-5 col-lg-4">
+        <div class="glass-card p-5">
+            <div class="text-center mb-4">
+                <div class="bg-primary text-white rounded-circle d-inline-flex align-items-center justify-content-center mb-3"
+                     style="width: 70px; height: 70px; background: linear-gradient(45deg, #4776E6, #8E54E9) !important; box-shadow: 0 8px 20px rgba(142,84,233,0.4);">
+                    <i class="fa-solid fa-user-graduate fa-2x"></i>
+                </div>
+                <h3 class="fw-bold mb-1">系统登录</h3>
+                <p class="text-muted small">欢迎回到学生会在线投票系统</p>
+            </div>
+
+            <form id="loginForm">
+                <div class="input-group mb-4 shadow-sm" style="border-radius: 12px; overflow: hidden;">
+                    <span class="input-group-text bg-white border-0 text-primary px-3">
+                        <i class="fa-regular fa-id-badge"></i>
+                    </span>
+                    <input type="text" id="student_id" class="form-control border-0 py-2" placeholder="请输入学号或 admin" required>
+                </div>
+
+                <div class="input-group mb-5 shadow-sm" style="border-radius: 12px; overflow: hidden;">
+                    <span class="input-group-text bg-white border-0 text-primary px-3">
+                        <i class="fa-solid fa-lock"></i>
+                    </span>
+                    <input type="password" id="password" class="form-control border-0 py-2" placeholder="请输入密码" required>
+                </div>
+
+                <button type="submit" id="loginBtn" class="btn btn-custom w-100 mb-3 py-2">
+                    <i class="fa-solid fa-right-to-bracket me-2"></i> 立即登录
+                </button>
+            </form>
+
+            <div class="text-center mt-4 border-top pt-3">
+                <div class="mb-2">
+                    <span class="text-muted small">还没有账号？</span>
+                    <a href="/register" class="text-primary fw-bold text-decoration-none small">
+                        提交注册申请 <i class="fa-solid fa-chevron-right ms-1" style="font-size: 0.7rem;"></i>
+                    </a>
+                </div>
+                <a href="#" class="text-muted text-decoration-none" style="font-size: 0.75rem;" onclick="showMessage('请联系校团委管理员重置密码', 'info')">忘记密码？</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.getElementById('loginForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const studentId = document.getElementById('student_id').value;
+        const password = document.getElementById('password').value;
+        const btn = document.getElementById('loginBtn');
+
+        // 开启高级加载动画
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i> 安全核验中...';
+        btn.disabled = true;
+
+        fetch('/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ student_id: studentId, password: password })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.code === 200) {
+                // 判断是否通过审核，给用户最直观的反馈
+                if (data.data.is_approved === false && data.data.role !== 'admin') {
+                    Swal.fire({
+                        title: '登录受限',
+                        text: '您的账号已注册，但尚未通过管理员审核。请耐心等待学籍核验！',
+                        icon: 'warning',
+                        confirmButtonColor: '#4776E6'
+                    });
+                    btn.innerHTML = '<i class="fa-solid fa-right-to-bracket me-2"></i> 立即登录';
+                    btn.disabled = false;
+                } else {
+                    // 登录成功
+                    Swal.fire({
+                        title: '登录成功！',
+                        text: '欢迎回来，' + data.data.name,
+                        icon: 'success',
+                        timer: 1500,
+                        showConfirmButton: false
+                    }).then(() => {
+                        window.location.href = '/'; // 刷新或跳转到主页
+                    });
+                }
+            } else {
+                // 账号密码错误提示
+                Swal.fire({
+                    title: '登录失败',
+                    text: data.msg,
+                    icon: 'error',
+                    confirmButtonColor: '#8E54E9'
+                });
+                btn.innerHTML = '<i class="fa-solid fa-right-to-bracket me-2"></i> 立即登录';
+                btn.disabled = false;
+            }
+        })
+        .catch(err => {
+            showMessage('无法连接到服务器，请检查后端状态', 'error');
+            btn.innerHTML = '<i class="fa-solid fa-right-to-bracket me-2"></i> 立即登录';
+            btn.disabled = false;
+        });
+    });
+</script>
+{% endblock %}

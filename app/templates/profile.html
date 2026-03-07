@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block navbar_items %}
+<li class="nav-item">
+    <a class="nav-link text-dark fw-bold" href="/"><i class="fa-solid fa-house"></i> 返回大厅</a>
+</li>
+{% endblock %}
+
+{% block content %}
+<div class="row g-4 animate__animated animate__fadeIn">
+    <div class="col-lg-4">
+        <div class="glass-card p-4 text-center">
+            <div class="position-relative d-inline-block mb-3">
+                <div class="bg-light rounded-circle shadow-sm d-flex align-items-center justify-content-center" style="width: 120px; height: 120px; font-size: 3rem; color: #4776E6;">
+                    <i class="fa-solid fa-user-tie"></i>
+                </div>
+                <span id="status-badge" class="position-absolute bottom-0 end-0 badge rounded-pill bg-secondary border border-2 border-white">
+                    检测中...
+                </span>
+            </div>
+            <h4 class="fw-bold mb-1">{{ name }}</h4>
+            <p class="text-muted small mb-4">学号: <span id="display-sid">加载中...</span></p>
+            
+            <div class="text-start border-top pt-4">
+                <div class="mb-3">
+                    <label class="small text-muted d-block">所属院系</label>
+                    <span id="display-dept" class="fw-bold">加载中...</span>
+                </div>
+                <div class="mb-3">
+                    <label class="small text-muted d-block">专业班级</label>
+                    <span id="display-major" class="fw-bold">加载中...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-8">
+        <div class="glass-card p-4 mb-4">
+            <h5 class="fw-bold mb-4"><i class="fa-solid fa-paper-plane text-primary me-2"></i> 我的投票提议</h5>
+            <div id="proposal-list" class="row g-3">
+                <div class="text-center py-4 text-muted small">正在调取数据...</div>
+            </div>
+        </div>
+
+        <div class="glass-card p-4">
+            <h5 class="fw-bold mb-4"><i class="fa-solid fa-shield-halved text-success me-2"></i> 投票历史与安全凭证</h5>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light">
+                        <tr class="small text-muted">
+                            <th>选举项目</th>
+                            <th>投给候选人</th>
+                            <th>时间</th>
+                            <th>安全存证 (Hash)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="vote-history-body" class="small">
+                        </tbody>
+                </table>
+            </div>
+            <div class="alert alert-info py-2 mt-3" style="font-size: 0.75rem;">
+                <i class="fa-solid fa-circle-info me-1"></i> <b>安全提示：</b> 每一个 Hash 值都是基于您的身份与投票时间加密生成的唯一凭证，确保投票真实不可篡改。
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // 1. 获取个人详细记录
+        fetch('/api/vote/my_records')
+            .then(res => res.json())
+            .then(data => {
+                // 渲染投票历史
+                const voteBody = document.getElementById('vote-history-body');
+                if(data.votes.length === 0) {
+                    voteBody.innerHTML = '<tr><td colspan="4" class="text-center py-4">暂无投票记录</td></tr>';
+                } else {
+                    voteBody.innerHTML = data.votes.map(v => `
+                        <tr>
+                            <td class="fw-bold">${v.election}</td>
+                            <td><span class="badge bg-primary-subtle text-primary">${v.candidate}</span></td>
+                            <td>${v.time}</td>
+                            <td><code class="text-truncate d-inline-block" style="max-width: 120px;" title="${v.hash}">${v.hash}</code></td>
+                        </tr>
+                    `).join('');
+                }
+
+                // 渲染提议进度
+                const propList = document.getElementById('proposal-list');
+                if(data.proposals.length === 0) {
+                    propList.innerHTML = '<div class="col-12 text-center py-3 text-muted">您尚未发起过投票提议</div>';
+                } else {
+                    propList.innerHTML = data.proposals.map(p => {
+                        let statusColor = p.status === 'approved' ? 'success' : (p.status === 'rejected' ? 'danger' : 'warning');
+                        let statusText = p.status === 'approved' ? '已通过' : (p.status === 'rejected' ? '已驳回' : '审核中');
+                        return `
+                        <div class="col-md-6">
+                            <div class="border rounded p-3 bg-light">
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <h6 class="fw-bold mb-0">${p.title}</h6>
+                                    <span class="badge bg-${statusColor}">${statusText}</span>
+                                </div>
+                                ${p.feedback ? `<p class="small text-danger mt-2 mb-0">反馈: ${p.feedback}</p>` : ''}
+                            </div>
+                        </div>
+                        `;
+                    }).join('');
+                }
+            });
+
+        // 2. 获取基本身份信息 (从登录时存的 session 或单独接口获取)
+        // 这里为了演示，从 session 中读取 (在 main_bp.route('/') 渲染时传过来更好，这里模拟前端逻辑)
+        // 我们在 auth/login 的 data 里其实已经有了，现在模拟展示
+        document.getElementById('display-sid').innerText = "{{ session.get('student_id') }}";
+        const isApproved = "{{ session.get('is_approved') }}" === "True";
+        const badge = document.getElementById('status-badge');
+        if(isApproved) {
+            badge.className = "position-absolute bottom-0 end-0 badge rounded-pill bg-success border border-2 border-white";
+            badge.innerHTML = '<i class="fa-solid fa-check me-1"></i>已认证';
+        } else {
+            badge.className = "position-absolute bottom-0 end-0 badge rounded-pill bg-warning text-dark border border-2 border-white";
+            badge.innerHTML = '<i class="fa-solid fa-clock me-1"></i>待审核';
+        }
+    });
+</script>
+{% endblock %}

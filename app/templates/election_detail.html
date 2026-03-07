@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+
+{% block navbar_items %}
+<li class="nav-item">
+    <a class="nav-link text-dark fw-bold" href="/"><i class="fa-solid fa-house"></i> 返回大厅</a>
+</li>
+{% endblock %}
+
+{% block content %}
+<div class="glass-card p-4 mb-5 animate__animated animate__fadeInDown">
+    <div class="row align-items-center">
+        <div class="col-md-8">
+            <h2 class="fw-bolder mb-2 text-primary">{{ election.title }}</h2>
+            <p class="text-muted mb-0"><i class="fa-solid fa-circle-info me-1"></i> {{ election.description }}</p>
+        </div>
+        <div class="col-md-4 text-md-end mt-3 mt-md-0">
+            <div class="bg-light rounded-pill px-4 py-2 d-inline-block shadow-sm">
+                <span class="text-danger fw-bold"><i class="fa-regular fa-clock"></i> 距离结束还有：</span>
+                <span id="countdown" class="ms-1" data-endtime="{{ election.end_time }}">计算中...</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<h4 class="fw-bold mb-4"><i class="fa-solid fa-users text-primary me-2"></i> 候选人名单</h4>
+<div class="row g-4">
+    {% if candidates %}
+        {% for candidate in candidates %}
+        <div class="col-md-6 col-lg-3 animate__animated animate__fadeInUp" style="animation-delay: {{ loop.index0 * 0.1 }}s;">
+            <div class="glass-card p-4 text-center h-100 d-flex flex-column transition-hover">
+                <div class="mx-auto mb-3 bg-white rounded-circle shadow-sm d-flex align-items-center justify-content-center" style="width: 100px; height: 100px; font-size: 2.5rem; color: #4776E6;">
+                    <i class="fa-solid fa-user-tie"></i>
+                </div>
+                <h4 class="fw-bold text-dark">{{ candidate.name }}</h4>
+                <span class="badge bg-secondary rounded-pill mb-3 mx-auto">{{ candidate.department }}</span>
+                <p class="text-muted small text-start" style="flex-grow: 1;">
+                    <i class="fa-solid fa-quote-left text-primary opacity-50 me-1"></i>
+                    {{ candidate.manifesto }}
+                </p>
+                <button class="btn btn-custom w-100 mt-3 vote-btn" 
+                        data-cid="{{ candidate.id }}" 
+                        data-cname="{{ candidate.name }}" 
+                        data-eid="{{ election.id }}">
+                    <i class="fa-solid fa-check-to-slot me-1"></i> 投TA一票
+                </button>
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+        <div class="col-12 text-center py-5">
+            <p class="text-muted">暂无候选人信息</p>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // 监听所有投票按钮的点击事件
+    document.querySelectorAll('.vote-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const candidateId = this.getAttribute('data-cid');
+            const candidateName = this.getAttribute('data-cname');
+            const electionId = this.getAttribute('data-eid');
+
+            // 弹出精美的高级确认框
+            Swal.fire({
+                title: '请确认您的选择',
+                html: `您确定要将神圣的一票投给 <b>${candidateName}</b> 吗？<br><small class='text-danger'>投票后将无法更改！</small>`,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#4776E6',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: '确认投票',
+                cancelButtonText: '让我再想想',
+                showLoaderOnConfirm: true, // 开启按钮加载动画
+                preConfirm: () => {
+                    // 调用我们之前写好的 /api/vote/do_vote 后端接口
+                    return fetch('/api/vote/do_vote', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ election_id: electionId, candidate_id: candidateId })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.code !== 200) { throw new Error(data.msg); }
+                        return data;
+                    })
+                    .catch(error => { Swal.showValidationMessage(`投票失败: ${error.message}`); });
+                },
+                allowOutsideClick: () => !Swal.isLoading()
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    Swal.fire({
+                        title: '投票成功！',
+                        text: '感谢您的参与，结果正在火速统计中。',
+                        icon: 'success'
+                    }).then(() => {
+                        // 投完票强制返回大厅，防止原地重复点
+                        window.location.href = '/'; 
+                    });
+                }
+            });
+        });
+    });
+</script>
+{% endblock %}

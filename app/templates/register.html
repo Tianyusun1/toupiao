@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8 col-xl-6">
+        <div class="glass-card p-5 animate__animated animate__fadeIn">
+            <div class="text-center mb-5">
+                <div class="bg-primary text-white rounded-circle d-inline-flex align-items-center justify-content-center mb-3" 
+                     style="width: 60px; height: 60px; background: linear-gradient(45deg, #4776E6, #8E54E9) !important;">
+                    <i class="fa-solid fa-user-plus fa-lg"></i>
+                </div>
+                <h3 class="fw-bold">学生身份注册</h3>
+                <p class="text-muted">请填写以下信息，提交后需等待管理员人工审核</p>
+            </div>
+
+            <form id="registerForm">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label small fw-bold">学号</label>
+                        <div class="input-group shadow-sm">
+                            <span class="input-group-text bg-white border-0"><i class="fa-solid fa-id-card text-primary"></i></span>
+                            <input type="text" id="student_id" class="form-control border-0" placeholder="您的学号" required>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-bold">真实姓名</label>
+                        <div class="input-group shadow-sm">
+                            <span class="input-group-text bg-white border-0"><i class="fa-solid fa-signature text-primary"></i></span>
+                            <input type="text" id="name" class="form-control border-0" placeholder="实名认证" required>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label small fw-bold">所属院系</label>
+                        <select id="department" class="form-select border-0 shadow-sm" required>
+                            <option value="">请选择学院</option>
+                            <option value="计算机科学与技术学院">计算机科学与技术学院</option>
+                            <option value="电子信息工程学院">电子信息工程学院</option>
+                            <option value="经济管理学院">经济管理学院</option>
+                            <option value="艺术设计学院">艺术设计学院</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-bold">入学年份</label>
+                        <input type="number" id="entry_year" class="form-control border-0 shadow-sm" placeholder="如: 2023" required>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small fw-bold">专业名称</label>
+                        <input type="text" id="major" class="form-control border-0 shadow-sm" placeholder="例如: 软件工程" required>
+                    </div>
+
+                    <div class="col-12">
+                        <label class="form-label small fw-bold">设置登录密码</label>
+                        <div class="input-group shadow-sm">
+                            <span class="input-group-text bg-white border-0"><i class="fa-solid fa-key text-primary"></i></span>
+                            <input type="password" id="password" class="form-control border-0" placeholder="建议6位以上数字字母组合" required>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-5">
+                    <button type="submit" id="regBtn" class="btn btn-custom w-100 py-3">
+                        提交申请并进入审核流 <i class="fa-solid fa-paper-plane ms-2"></i>
+                    </button>
+                    <div class="text-center mt-3">
+                        <a href="/" class="text-muted small text-decoration-none">已有账号？返回登录</a>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.getElementById('registerForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const btn = document.getElementById('regBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i> 正在提交加密申请...';
+
+        const payload = {
+            student_id: document.getElementById('student_id').value,
+            name: document.getElementById('name').value,
+            department: document.getElementById('department').value,
+            major: document.getElementById('major').value,
+            entry_year: document.getElementById('entry_year').value,
+            password: document.getElementById('password').value
+        };
+
+        fetch('/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.code === 200) {
+                Swal.fire({
+                    icon: 'success',
+                    title: '注册申请已送达',
+                    text: '请等待管理员进行学籍核验，审核通过后即可登录！',
+                    confirmButtonText: '确定'
+                }).then(() => { window.location.href = '/'; });
+            } else {
+                Swal.fire('提交失败', data.msg, 'error');
+                btn.disabled = false;
+                btn.innerText = '提交申请并进入审核流';
+            }
+        });
+    });
+</script>
+{% endblock %}
