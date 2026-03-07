@@ -2,25 +2,23 @@ import os
 
 
 class Config:
-    # 1. Flask 安全密钥 (极其重要)
-    # 用于保证登录状态 (Session) 的安全，防止被伪造。
+    # 1. Flask 安全密钥
+    # 用于保证 Session 安全。
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'your_super_secret_key_voting_system_2026'
 
     # 2. MySQL 数据库连接配置
-    # 使用你提供的账号 root 和密码 123456。
+    # 确保数据库名 online_voting_db 已经在 MySQL 中手动创建。
     SQLALCHEMY_DATABASE_URI = 'mysql+pymysql://root:123456@127.0.0.1:3306/online_voting_db'
 
-    # 关闭 SQLAlchemy 的事件追踪，提高性能并节省内存
+    # 关闭事件追踪以提高性能
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
-    # 3. Redis 缓存连接配置
-    # 用于高并发下的“防刷票限流”，限制同一用户/IP的请求频率。
-    REDIS_URL = 'redis://:123456@127.0.0.1:6379/0'
+    # 3. Redis 缓存连接配置 (已修复认证错误)
+    # 删除了密码部分，直接连接本地默认端口 6379。
+    REDIS_URL = 'redis://127.0.0.1:6379/0'
 
-    # 4. RSA 非对称加密安全配置 (新增)
-    # 这是后端的【私钥】，绝对不能泄露给前端！
-    # 它必须与 login.html 里的 PUBLIC_KEY（公钥）成对使用。
-    # 如果你还没有生成密钥对，请确保此处填写的私钥格式正确。
+    # 4. RSA 非对称加密安全配置
+    # 必须与 login.html 里的 PUBLIC_KEY 成对使用。
     RSA_PRIVATE_KEY = """-----BEGIN RSA PRIVATE KEY-----
 MIICWwIBAAKBgQCs10mGwu4ex3jHFDpaQp+FNAirec+UVkdR6pRcdViwSD1FQnpN
 RrxrTJGy4XeubsTt8MygeOYWoJLJqJk9Oezi5hJx5fFvA7eHeo0Q6txHNFlynf19
@@ -38,5 +36,5 @@ kGUDaqBSDDBgaawfocO1GpfOSdB/W9Xc1FgrycO3uVu7QLk+5eM//gqDqEf//pLF
 -----END RSA PRIVATE KEY-----"""
 
     # 5. 上传配置
-    # 限制上传图片的最大尺寸为 5MB，防止恶意上传超大文件挤爆磁盘。
+    # 限制上传图片的最大尺寸为 5MB。
     MAX_CONTENT_LENGTH = 5 * 1024 * 1024

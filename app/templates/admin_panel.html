@@ -66,7 +66,9 @@
                             <i class="fa-solid fa-rotate me-1"></i> 刷新列表
                         </button>
                     </div>
-                    <p class="text-muted small mb-4">您可以导出包含 **SHA-256 安全指纹** 的全量投票数据，用于防篡改审计。 [cite: 2026-03-04]</p>
+                    <p class="text-muted small mb-4">
+                        您可以监控各项目的 **AI 安全评分**。系统会自动通过孤立森林算法识别潜在的刷票风险。
+                    </p>
 
                     <div class="table-responsive">
                         <table class="table table-hover align-middle">
@@ -74,13 +76,12 @@
                                 <tr>
                                     <th>项目编号</th>
                                     <th>标题</th>
-                                    <th>截止时间</th>
                                     <th>当前状态</th>
-                                    <th class="text-center">操作</th>
+                                    <th>AI 审计评分</th> <th class="text-center">操作</th>
                                 </tr>
                             </thead>
                             <tbody id="all-elections-body">
-                                <tr><td colspan="5" class="text-center py-4 text-muted">点击标签页或刷新按钮加载数据...</td></tr>
+                                <tr><td colspan="5" class="text-center py-4 text-muted">正在加载项目...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -93,7 +94,6 @@
 {% endblock %}
 
 {% block scripts %}
-
 <script>
     document.addEventListener('DOMContentLoaded', () => {
         loadPendingUsers();
@@ -128,7 +128,7 @@
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({user_id: id, action: action})
         }).then(res => res.json()).then(data => {
-            Swal.fire('审核反馈', data.msg, 'success');
+            Swal.fire('成功', data.msg, 'success');
             loadPendingUsers();
         });
     }
@@ -141,7 +141,7 @@
                 const list = document.getElementById('pending-elections-list');
                 document.getElementById('election-count').innerText = data.data.length;
                 list.innerHTML = data.data.map(e => `
-                    <div class="card border-0 shadow-sm mb-3 p-3 animate__animated animate__fadeIn" style="background: rgba(255,255,255,0.6);">
+                    <div class="card border-0 shadow-sm mb-3 p-3 animate__animated animate__fadeIn">
                         <div class="d-flex justify-content-between align-items-center">
                             <div>
                                 <h6 class="fw-bold mb-1">${e.title}</h6>
@@ -164,14 +164,10 @@
                 title: '驳回提议',
                 input: 'textarea',
                 inputLabel: '请输入驳回理由',
-                inputPlaceholder: '学生将会在其个人中心看到此反馈...',
                 showCancelButton: true,
-                confirmButtonColor: '#d33',
-                confirmButtonText: '确认驳回'
+                confirmButtonColor: '#d33'
             }).then((result) => {
-                if (result.isConfirmed) {
-                    sendReviewRequest(id, 'reject', result.value);
-                }
+                if (result.isConfirmed) sendReviewRequest(id, 'reject', result.value);
             });
         } else {
             sendReviewRequest(id, 'approve');
@@ -189,7 +185,7 @@
         });
     }
 
-    // --- 3. 数据导出逻辑 (核心修复点) ---
+    // --- 3. 数据审计与评分加载 (核心完善点) ---
     function loadAllElections() {
         const body = document.getElementById('all-elections-body');
         body.innerHTML = '<tr><td colspan="5" class="text-center py-4">正在检索全量项目...</td></tr>';
@@ -197,27 +193,56 @@
         fetch('/api/admin/elections/all')
             .then(res => res.json())
             .then(data => {
-                body.innerHTML = data.data.map(e => `
-                    <tr>
+                body.innerHTML = data.data.map(e => {
+                    // 默认显示加载占位符，稍后异步获取分数
+                    return `
+                    <tr id="row-${e.id}">
                         <td><span class="text-muted small">#${e.id}</span></td>
                         <td><b class="text-dark">${e.title}</b></td>
-                        <td><small class="text-muted">${e.end_time}</small></td>
                         <td>
                             <span class="badge rounded-pill ${getStatusClass(e.status)}">
                                 ${e.status.toUpperCase()}
                             </span>
                         </td>
+                        <td id="score-${e.id}"><i class="fa-solid fa-spinner fa-spin text-muted"></i> 分析中...</td>
                         <td class="text-center">
-                            <a href="/api/admin/export/${e.id}" class="btn btn-sm btn-primary rounded-pill px-3 shadow-sm">
-                                <i class="fa-solid fa-file-csv me-1"></i> 导出报表
-                            </a>
+                            <div class="btn-group">
+                                <a href="/election/${e.id}/results" class="btn btn-sm btn-outline-info rounded-pill px-2 me-1" title="查看大屏">
+                                    <i class="fa-solid fa-chart-line"></i>
+                                </a>
+                                <a href="/api/admin/export/${e.id}" class="btn btn-sm btn-primary rounded-pill px-3 shadow-sm">
+                                    <i class="fa-solid fa-file-csv me-1"></i> 导出
+                                </a>
+                            </div>
                         </td>
                     </tr>
-                `).join('');
-                if(data.data.length === 0) body.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-5">暂无已审核项目可供审计</td></tr>';
-            })
-            .catch(err => {
-                body.innerHTML = '<tr><td colspan="5" class="text-center text-danger py-4">数据加载失败，请检查后端连接</td></tr>';
+                    `;
+                }).join('');
+
+                // 异步逐个加载每个项目的安全评分
+                data.data.forEach(e => fetchScore(e.id));
+
+                if(data.data.length === 0) body.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-5">暂无已审核项目</td></tr>';
+            });
+    }
+
+    function fetchScore(eid) {
+        fetch(`/api/vote/statistics/${eid}`)
+            .then(res => res.json())
+            .then(data => {
+                const scoreBox = document.getElementById(`score-${eid}`);
+                if (data.code === 200) {
+                    const sec = data.data.security;
+                    let color = sec.level === '低' ? 'success' : (sec.level === '中' ? 'warning' : 'danger');
+                    scoreBox.innerHTML = `
+                        <div class="d-flex align-items-center">
+                            <span class="fw-bold text-${color} me-2">${sec.score}</span>
+                            <span class="badge bg-${color}-subtle text-${color} x-small border border-${color}-subtle">${sec.level}风险</span>
+                        </div>
+                    `;
+                } else {
+                    scoreBox.innerHTML = '<span class="text-muted small">数据不足</span>';
+                }
             });
     }
 
@@ -230,4 +255,8 @@
         }
     }
 </script>
+
+<style>
+    .x-small { font-size: 0.7rem; }
+</style>
 {% endblock %}

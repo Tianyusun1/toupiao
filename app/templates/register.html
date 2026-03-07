@@ -6,11 +6,11 @@
         <div class="glass-card p-5 animate__animated animate__fadeIn">
             <div class="text-center mb-5">
                 <div class="bg-primary text-white rounded-circle d-inline-flex align-items-center justify-content-center mb-3" 
-                     style="width: 60px; height: 60px; background: linear-gradient(45deg, #4776E6, #8E54E9) !important;">
+                     style="width: 60px; height: 60px; background: linear-gradient(45deg, #4776E6, #8E54E9) !important; box-shadow: 0 5px 15px rgba(71, 118, 230, 0.3);">
                     <i class="fa-solid fa-user-plus fa-lg"></i>
                 </div>
                 <h3 class="fw-bold">学生身份注册</h3>
-                <p class="text-muted">请填写以下信息，提交后需等待管理员人工审核</p>
+                <p class="text-muted">请务必填写真实信息，审核通过后方可参与投票</p>
             </div>
 
             <form id="registerForm">
@@ -19,7 +19,7 @@
                         <label class="form-label small fw-bold">学号</label>
                         <div class="input-group shadow-sm">
                             <span class="input-group-text bg-white border-0"><i class="fa-solid fa-id-card text-primary"></i></span>
-                            <input type="text" id="student_id" class="form-control border-0" placeholder="您的学号" required>
+                            <input type="text" id="student_id" class="form-control border-0" placeholder="10-12位数字" required>
                         </div>
                     </div>
                     <div class="col-md-6">
@@ -32,38 +32,51 @@
 
                     <div class="col-md-6">
                         <label class="form-label small fw-bold">所属院系</label>
-                        <select id="department" class="form-select border-0 shadow-sm" required>
+                        <select id="department" class="form-select border-0 shadow-sm" required style="cursor: pointer;">
                             <option value="">请选择学院</option>
                             <option value="计算机科学与技术学院">计算机科学与技术学院</option>
                             <option value="电子信息工程学院">电子信息工程学院</option>
                             <option value="经济管理学院">经济管理学院</option>
                             <option value="艺术设计学院">艺术设计学院</option>
+                            <option value="现代康养产业学院">现代康养产业学院</option>
                         </select>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label small fw-bold">入学年份</label>
-                        <input type="number" id="entry_year" class="form-control border-0 shadow-sm" placeholder="如: 2023" required>
+                        <input type="number" id="entry_year" class="form-control border-0 shadow-sm" placeholder="例如: 2024" required>
                     </div>
-                    <div class="col-12">
+                    <div class="col-md-6">
                         <label class="form-label small fw-bold">专业名称</label>
-                        <input type="text" id="major" class="form-control border-0 shadow-sm" placeholder="例如: 软件工程" required>
+                        <input type="text" id="major" class="form-control border-0 shadow-sm" placeholder="例如: 机器人工程" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-bold">专业班级</label>
+                        <input type="text" id="class_name" class="form-control border-0 shadow-sm" placeholder="例如: 2201班" required>
                     </div>
 
-                    <div class="col-12">
+                    <div class="col-md-6">
                         <label class="form-label small fw-bold">设置登录密码</label>
                         <div class="input-group shadow-sm">
                             <span class="input-group-text bg-white border-0"><i class="fa-solid fa-key text-primary"></i></span>
-                            <input type="password" id="password" class="form-control border-0" placeholder="建议6位以上数字字母组合" required>
+                            <input type="password" id="password" class="form-control border-0" placeholder="不少于6位" required>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-bold">确认登录密码</label>
+                        <div class="input-group shadow-sm">
+                            <span class="input-group-text bg-white border-0"><i class="fa-solid fa-lock text-primary"></i></span>
+                            <input type="password" id="confirm_password" class="form-control border-0" placeholder="请再次输入密码" required>
                         </div>
                     </div>
                 </div>
 
                 <div class="mt-5">
-                    <button type="submit" id="regBtn" class="btn btn-custom w-100 py-3">
+                    <button type="submit" id="regBtn" class="btn btn-custom w-100 py-3 shadow">
                         提交申请并进入审核流 <i class="fa-solid fa-paper-plane ms-2"></i>
                     </button>
                     <div class="text-center mt-3">
-                        <a href="/" class="text-muted small text-decoration-none">已有账号？返回登录</a>
+                        <span class="text-muted small">已有账号？</span>
+                        <a href="/" class="text-primary fw-bold small text-decoration-none">返回登录</a>
                     </div>
                 </div>
             </form>
@@ -76,17 +89,48 @@
 <script>
     document.getElementById('registerForm').addEventListener('submit', function(e) {
         e.preventDefault();
+
+        // 1. 获取输入值
+        const sid = document.getElementById('student_id').value.trim();
+        const name = document.getElementById('name').value.trim();
+        const pwd = document.getElementById('password').value;
+        const cpwd = document.getElementById('confirm_password').value;
+        const year = document.getElementById('entry_year').value;
+
+        // 2. 前端高强度校验
+        // a. 学号正则校验 (假设学号为 8-12 位数字)
+        const sidReg = /^\d{8,12}$/;
+        if(!sidReg.test(sid)) {
+            return Swal.fire('校验失败', '请输入正确的学号格式（8-12位数字）', 'warning');
+        }
+
+        // b. 密码一致性校验
+        if(pwd !== cpwd) {
+            return Swal.fire('校验失败', '两次输入的密码不一致！', 'error');
+        }
+        if(pwd.length < 6) {
+            return Swal.fire('校验失败', '密码长度不能少于 6 位', 'warning');
+        }
+
+        // c. 入学年份合理性
+        const currentYear = new Date().getFullYear();
+        if(year < 2010 || year > currentYear + 1) {
+            return Swal.fire('校验失败', '请输入合理的入学年份', 'warning');
+        }
+
+        // 3. 执行提交
         const btn = document.getElementById('regBtn');
         btn.disabled = true;
-        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i> 正在提交加密申请...';
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i> 正在安全传输数据...';
 
         const payload = {
-            student_id: document.getElementById('student_id').value,
-            name: document.getElementById('name').value,
+            student_id: sid,
+            name: name,
             department: document.getElementById('department').value,
             major: document.getElementById('major').value,
-            entry_year: document.getElementById('entry_year').value,
-            password: document.getElementById('password').value
+            class_name: document.getElementById('class_name').value,
+            entry_year: year,
+            password: pwd
         };
 
         fetch('/auth/register', {
@@ -99,15 +143,20 @@
             if (data.code === 200) {
                 Swal.fire({
                     icon: 'success',
-                    title: '注册申请已送达',
-                    text: '请等待管理员进行学籍核验，审核通过后即可登录！',
-                    confirmButtonText: '确定'
+                    title: '提交成功！',
+                    text: data.msg,
+                    confirmButtonColor: '#4776E6'
                 }).then(() => { window.location.href = '/'; });
             } else {
-                Swal.fire('提交失败', data.msg, 'error');
+                Swal.fire('申请失败', data.msg, 'error');
                 btn.disabled = false;
-                btn.innerText = '提交申请并进入审核流';
+                btn.innerHTML = '提交申请并进入审核流 <i class="fa-solid fa-paper-plane ms-2"></i>';
             }
+        })
+        .catch(err => {
+            console.error(err);
+            Swal.fire('网络异常', '无法连接到后端服务器', 'error');
+            btn.disabled = false;
         });
     });
 </script>

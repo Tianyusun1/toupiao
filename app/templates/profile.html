@@ -19,8 +19,18 @@
                 </span>
             </div>
             <h4 class="fw-bold mb-1">{{ name }}</h4>
-            <p class="text-muted small mb-4">学号: <span id="display-sid">加载中...</span></p>
-            
+            <p class="text-muted small mb-3">学号: <span id="display-sid">加载中...</span></p>
+
+            <div class="mb-4 px-2">
+                <label class="small text-muted d-block mb-1">个人简介</label>
+                <p id="display-bio" class="small text-dark bg-light p-2 rounded border-start border-3 border-primary" style="min-height: 40px; text-align: left;">
+                    正在加载简介...
+                </p>
+                <button class="btn btn-sm btn-outline-primary w-100 rounded-pill mt-2" onclick="editBio()">
+                    <i class="fa-solid fa-pen-to-square me-1"></i> 编辑个性签名
+                </button>
+            </div>
+
             <div class="text-start border-top pt-4">
                 <div class="mb-3">
                     <label class="small text-muted d-block">所属院系</label>
@@ -68,11 +78,58 @@
 
 {% block scripts %}
 <script>
+    // 定义修改简介的函数
+    function editBio() {
+        const currentBio = document.getElementById('display-bio').innerText.trim();
+        const placeholder = "这个人很懒，什么都没写...";
+
+        Swal.fire({
+            title: '修改个人简介',
+            input: 'textarea',
+            inputLabel: '展示您的个性宣言',
+            inputValue: currentBio === placeholder ? '' : currentBio,
+            inputPlaceholder: '请输入新的简介内容...',
+            showCancelButton: true,
+            confirmButtonText: '提交保存',
+            cancelButtonText: '取消',
+            confirmButtonColor: '#4776E6',
+            preConfirm: (newBio) => {
+                return fetch('/api/vote/update_profile', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ bio: newBio })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.code !== 200) throw new Error(data.msg);
+                    return newBio;
+                })
+                .catch(error => {
+                    Swal.showValidationMessage(`保存失败: ${error.message}`);
+                });
+            },
+            allowOutsideClick: () => !Swal.isLoading()
+        }).then((result) => {
+            if (result.isConfirmed) {
+                document.getElementById('display-bio').innerText = result.value || placeholder;
+                Swal.fire({
+                    icon: 'success',
+                    title: '更新成功',
+                    timer: 1500,
+                    showConfirmButton: false
+                });
+            }
+        });
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
-        // 1. 获取个人详细记录
+        // 1. 获取个人详细记录及简介
         fetch('/api/vote/my_records')
             .then(res => res.json())
             .then(data => {
+                // 渲染简介
+                document.getElementById('display-bio').innerText = data.bio || "这个人很懒，什么都没写...";
+
                 // 渲染投票历史
                 const voteBody = document.getElementById('vote-history-body');
                 if(data.votes.length === 0) {
@@ -88,7 +145,7 @@
                     `).join('');
                 }
 
-                // 渲染提议进度
+                // 渲染提议进度 (重点优化：增加反馈显示)
                 const propList = document.getElementById('proposal-list');
                 if(data.proposals.length === 0) {
                     propList.innerHTML = '<div class="col-12 text-center py-3 text-muted">您尚未发起过投票提议</div>';
@@ -96,14 +153,28 @@
                     propList.innerHTML = data.proposals.map(p => {
                         let statusColor = p.status === 'approved' ? 'success' : (p.status === 'rejected' ? 'danger' : 'warning');
                         let statusText = p.status === 'approved' ? '已通过' : (p.status === 'rejected' ? '已驳回' : '审核中');
+
+                        // 驳回理由 UI 增强
+                        let feedbackHtml = '';
+                        if (p.status === 'rejected' && p.feedback) {
+                            feedbackHtml = `
+                            <div class="mt-3 p-2 bg-danger-subtle rounded border border-danger-subtle animate__animated animate__shakeX">
+                                <small class="text-danger fw-bold d-block mb-1">
+                                    <i class="fa-solid fa-comment-dots me-1"></i> 管理员驳回意见：
+                                </small>
+                                <p class="small text-danger mb-0">${p.feedback}</p>
+                            </div>
+                            `;
+                        }
+
                         return `
                         <div class="col-md-6">
-                            <div class="border rounded p-3 bg-light">
+                            <div class="glass-card p-3 h-100 border">
                                 <div class="d-flex justify-content-between align-items-start mb-2">
                                     <h6 class="fw-bold mb-0">${p.title}</h6>
                                     <span class="badge bg-${statusColor}">${statusText}</span>
                                 </div>
-                                ${p.feedback ? `<p class="small text-danger mt-2 mb-0">反馈: ${p.feedback}</p>` : ''}
+                                ${feedbackHtml}
                             </div>
                         </div>
                         `;
@@ -111,10 +182,11 @@
                 }
             });
 
-        // 2. 获取基本身份信息 (从登录时存的 session 或单独接口获取)
-        // 这里为了演示，从 session 中读取 (在 main_bp.route('/') 渲染时传过来更好，这里模拟前端逻辑)
-        // 我们在 auth/login 的 data 里其实已经有了，现在模拟展示
+        // 2. 渲染身份基础信息
         document.getElementById('display-sid').innerText = "{{ session.get('student_id') }}";
+        document.getElementById('display-dept').innerText = "{{ session.get('department') or '未知学院' }}";
+        document.getElementById('display-major').innerText = "{{ session.get('major') or '暂无专业信息' }}";
+
         const isApproved = "{{ session.get('is_approved') }}" === "True";
         const badge = document.getElementById('status-badge');
         if(isApproved) {

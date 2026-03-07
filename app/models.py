@@ -35,24 +35,27 @@ class User(db.Model):
 
 
 class Election(db.Model):
-    """选举/提议项目表：支持 UGC 提议流转"""
+    """选举/提议项目表：支持 UGC 提议与多选配置"""
     __tablename__ = 'elections'
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text)
 
-    # --- 图片上传海报字段 (可选项) ---
+    # --- 图片上传海报字段 ---
     image_url = db.Column(db.String(255), nullable=True)
 
+    # --- 多选配置 ---
+    is_multi_choice = db.Column(db.Boolean, default=False)  # 新增：是否支持多选
+
     # --- UGC 提议逻辑 ---
-    proposer_id = db.Column(db.Integer, db.ForeignKey('users.id'))  # 谁提议的
-    review_status = db.Column(db.String(20), default='pending')  # 审核状态: pending(待审), approved(通过), rejected(驳回)
-    admin_feedback = db.Column(db.Text)  # 管理员反馈/驳回理由
+    proposer_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    review_status = db.Column(db.String(20), default='pending')  # pending, approved, rejected
+    admin_feedback = db.Column(db.Text)
 
     start_time = db.Column(db.DateTime)
     end_time = db.Column(db.DateTime)
-    status = db.Column(db.String(20), default='draft')  # 状态: draft(草稿), active(进行中), ended(已结束)
-    is_official = db.Column(db.Boolean, default=False)  # 是否为官方发起的投票
+    status = db.Column(db.String(20), default='draft')  # draft, active, ended
+    is_official = db.Column(db.Boolean, default=False)
 
 
 class Candidate(db.Model):
@@ -62,14 +65,14 @@ class Candidate(db.Model):
     election_id = db.Column(db.Integer, db.ForeignKey('elections.id'), nullable=False)
     name = db.Column(db.String(50), nullable=False)
     department = db.Column(db.String(50))
-    manifesto = db.Column(db.Text)  # 竞选宣言
+    manifesto = db.Column(db.Text)
 
-    # --- 新增：为每个选项/候选人独立上传图片/附件 ---
+    # --- 每个选项独立上传图片 ---
     image_url = db.Column(db.String(255), nullable=True)
 
     # --- 资质审核 ---
-    is_qualified = db.Column(db.Boolean, default=False)  # 资质是否审核通过
-    qual_materials = db.Column(db.Text)  # 资质证明材料描述
+    is_qualified = db.Column(db.Boolean, default=False)
+    qual_materials = db.Column(db.Text)
 
 
 class VoteRecord(db.Model):
@@ -82,13 +85,17 @@ class VoteRecord(db.Model):
     vote_time = db.Column(db.DateTime, default=datetime.utcnow)
     ip_address = db.Column(db.String(50))
 
-    # --- 投票安全凭证 (区块链思想) ---
-    # 生成方式：hash(user_id + election_id + time)
+    # --- 投票安全凭证 (SHA-256) ---
     vote_hash = db.Column(db.String(64), unique=True)
 
-    __table_args__ = (db.UniqueConstraint('user_id', 'election_id', name='uq_user_election_vote'),)
+    # 注意：为了支持多选（一个用户对同一个项目产生多条针对不同候选人的记录），
+    # 我们移除了原有的 UniqueConstraint('user_id', 'election_id') 物理约束。
+    # 逻辑层面的“一人只能投一次”将在接口中通过代码控制。
 
     def generate_hash(self):
-        """生成唯一的投票凭证"""
-        raw_str = f"{self.user_id}-{self.election_id}-{self.vote_time}"
+        """
+        生成唯一的投票凭证。
+        增加 candidate_id 参与计算，确保多选时每条记录产生不同的哈希指纹。
+        """
+        raw_str = f"{self.user_id}-{self.election_id}-{self.candidate_id}-{self.vote_time}"
         self.vote_hash = hashlib.sha256(raw_str.encode()).hexdigest()

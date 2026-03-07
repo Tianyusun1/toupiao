@@ -28,7 +28,13 @@
         </h2>
         <p class="text-muted mb-0">参与校园决策，投出属于你的关键一票。</p>
     </div>
-    <button class="btn btn-custom shadow-lg px-4" data-bs-toggle="modal" data-bs-target="#proposeModal">
+
+    <button class="btn btn-custom shadow-lg px-4"
+        {% if session.get('is_approved') == False and session.get('role') != 'admin' %}
+            onclick="Swal.fire({title: '权限受限', text: '您的账号尚未通过审核，无法发起提议', icon: 'warning', confirmButtonColor: '#4776E6'})"
+        {% else %}
+            data-bs-toggle="modal" data-bs-target="#proposeModal"
+        {% endif %}>
         <i class="fa-solid fa-plus-circle me-1"></i> 发起投票提议
     </button>
 </div>
@@ -61,6 +67,10 @@
                 {% endif %}
 
                 <h4 class="fw-bold mb-3 text-dark">{{ election.title }}</h4>
+                {% if election.is_multi_choice %}
+                <div class="mb-2"><span class="badge bg-info-subtle text-info small border border-info-subtle">多选投票项目</span></div>
+                {% endif %}
+
                 <p class="text-muted mb-4 small" style="flex-grow: 1; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">
                     {{ election.description }}
                 </p>
@@ -125,6 +135,13 @@
                             <label class="form-label small fw-bold">结束时间</label>
                             <input type="datetime-local" id="prop-end-time" class="form-control border-0 bg-light py-2" required>
                         </div>
+                    </div>
+
+                    <div class="mb-3 form-check form-switch p-0" style="margin-left: 2.5rem;">
+                        <input class="form-check-input" type="checkbox" id="prop-multi" style="cursor: pointer; width: 2.5rem; height: 1.25rem;">
+                        <label class="form-check-label small fw-bold ms-2" for="prop-multi" style="cursor: pointer;">
+                            支持多选 (用户可同时投给多位候选人)
+                        </label>
                     </div>
 
                     <div class="mb-4">
@@ -196,9 +213,13 @@
         const endTime = document.getElementById('prop-end-time').value;
         const imageFile = document.getElementById('prop-image').files[0];
 
+        // 修改点：获取多选开关状态
+        const isMulti = document.getElementById('prop-multi').checked;
+
         const formData = new FormData();
         formData.append('title', title);
         formData.append('description', desc);
+        formData.append('is_multi_choice', isMulti); // 添加到表单数据
         if (startTime) formData.append('start_time', startTime);
         if (endTime) formData.append('end_time', endTime);
         if (imageFile) formData.append('image', imageFile);

@@ -8,11 +8,12 @@ from Crypto.Cipher import PKCS1_v1_5
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 
 
-# --- 高级权限拦截器：不仅要登录，还要审核通过 ---
+# --- 高级权限拦截器：用于拦截敏感操作，但不拦截页面进入 ---
 def approval_required(view):
     """
-    这是一个高级装饰器。
-    挂载它后，即便用户登录了，如果管理员还没审核通过，也无法进行投票或提议。
+    高级装饰器。
+    挂载在【提交投票】、【发起提议】等 API 路由上。
+    允许未审核用户进入页面查看，但尝试点击提交时会返回 403。
     """
 
     @functools.wraps(view)
@@ -21,14 +22,16 @@ def approval_required(view):
             return jsonify({'code': 401, 'msg': '请先登录'}), 401
 
         user = User.query.get(session['user_id'])
-        if not user or not user.is_approved:
-            return jsonify({'code': 403, 'msg': '您的账号处于待审核状态，请联系管理员！'}), 403
+        # 管理员拥有所有权限；学生则必须 is_approved 为 True
+        if not user or (user.role != 'admin' and not user.is_approved):
+            return jsonify({'code': 403, 'msg': '您的账号处于待审核状态，暂无权限执行此操作。请联系管理员！'}), 403
         return view(*args, **kwargs)
 
     return wrapped_view
 
 
 def login_required(view):
+    """基础装饰器：仅验证是否登录，不验证审核状态"""
     @functools.wraps(view)
     def wrapped_view(*args, **kwargs):
         if 'user_id' not in session:
@@ -72,7 +75,8 @@ def register():
     try:
         db.session.add(new_user)
         db.session.commit()
-        return jsonify({'code': 200, 'msg': '申请已提交！请等待管理员审核。'})
+        # 修改提示语：告知用户即使未审核也可以登录
+        return jsonify({'code': 200, 'msg': '申请已提交！审核期间您仍可登录系统浏览，但无法进行投票。'})
     except Exception as e:
         db.session.rollback()
         return jsonify({'code': 500, 'msg': f'服务器错误: {str(e)}'}), 500
@@ -126,12 +130,14 @@ def login():
     user = User.query.filter_by(student_id=student_id).first()
 
     if user and user.check_password(password_plain):
+        # 写入 Session
         session['user_id'] = user.id
         session['student_id'] = user.student_id
         session['role'] = user.role
         session['name'] = user.name
         session['is_approved'] = user.is_approved
         session['department'] = user.department
+        session['major'] = user.major
 
         return jsonify({
             'code': 200,

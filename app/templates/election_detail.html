@@ -7,15 +7,22 @@
 {% endblock %}
 
 {% block content %}
+{% if not is_approved and not is_expired %}
+<div class="alert alert-info shadow-sm mb-4 border-0 animate__animated animate__fadeIn">
+    <i class="fa-solid fa-user-shield me-2 fs-5 align-middle"></i>
+    <strong>账号审核中：</strong> 您当前可以查看实时排名，但需通过管理员审核后方可参与投票。
+</div>
+{% endif %}
+
 {% if not_started %}
 <div class="alert alert-warning shadow-sm mb-4 border-0 animate__animated animate__fadeIn">
     <i class="fa-solid fa-hourglass-start me-2 fs-5 align-middle"></i>
-    <strong>投票尚未开始！</strong> 本次活动将于 {{ election.start_time.strftime('%Y-%m-%d %H:%M') }} 准时开启，请稍后再来。
+    <strong>投票尚未开始！</strong> 本次活动将于 {{ election.start_time.strftime('%Y-%m-%d %H:%M') }} 准时开启。
 </div>
 {% elif is_expired %}
 <div class="alert alert-secondary shadow-sm mb-4 border-0 animate__animated animate__fadeIn">
     <i class="fa-solid fa-clock-rotate-left me-2 fs-5 align-middle"></i>
-    <strong>投票已截止！</strong> 本次投票已于 {{ election.end_time.strftime('%Y-%m-%d %H:%M') }} 结束，当前显示为最终票数排名。
+    <strong>投票已截止！</strong> 本次投票已结束，当前显示为最终票数排名。
 </div>
 {% elif has_voted %}
 <div class="alert alert-success shadow-sm mb-4 border-0 animate__animated animate__pulse">
@@ -34,7 +41,14 @@
         {% else %}
         <div class="col-md-8">
         {% endif %}
-            <h2 class="fw-bolder mb-2 text-primary">{{ election.title }}</h2>
+            <div class="d-flex align-items-center mb-2">
+                <h2 class="fw-bolder mb-0 text-primary">{{ election.title }}</h2>
+                {% if election.is_multi_choice %}
+                    <span class="badge bg-info ms-2 rounded-pill"><i class="fa-solid fa-layer-group me-1"></i>多选模式</span>
+                {% else %}
+                    <span class="badge bg-primary-subtle text-primary ms-2 rounded-pill border border-primary-subtle">单选模式</span>
+                {% endif %}
+            </div>
             <p class="text-muted mb-0"><i class="fa-solid fa-circle-info me-1"></i> {{ election.description }}</p>
         </div>
 
@@ -58,11 +72,12 @@
     </a>
 </div>
 
-<div class="row g-4">
+<div class="row g-4 {% if election.is_multi_choice and can_vote %}mb-5 pb-5{% endif %}">
     {% if candidates %}
         {% for candidate in candidates %}
         <div class="col-md-6 col-lg-3 animate__animated animate__fadeInUp" style="animation-delay: {{ loop.index0 * 0.1 }}s;">
-            <div class="glass-card p-4 text-center h-100 d-flex flex-column transition-hover position-relative {% if is_expired %}opacity-85{% endif %}">
+            <div class="glass-card p-4 text-center h-100 d-flex flex-column transition-hover position-relative {% if is_expired %}opacity-85{% endif %} {% if election.is_multi_choice and can_vote %}multi-vote-card{% endif %}"
+                 {% if election.is_multi_choice and can_vote %}style="cursor: pointer;" onclick="toggleCandidate('{{ candidate.id }}', this)"{% endif %}>
 
                 <div class="position-absolute top-0 start-0 m-3">
                     {% if loop.index == 1 %}
@@ -75,6 +90,14 @@
                         <span class="badge bg-light text-dark border fs-6 shadow-sm">NO.{{ loop.index }}</span>
                     {% endif %}
                 </div>
+
+                {% if election.is_multi_choice and can_vote %}
+                <div class="position-absolute top-0 end-0 m-3">
+                    <input class="form-check-input candidate-checkbox" type="checkbox" value="{{ candidate.id }}"
+                           data-cid="{{ candidate.id }}"
+                           id="check-{{ candidate.id }}" style="transform: scale(1.5); cursor: pointer;" onclick="event.stopPropagation(); updateCount();">
+                </div>
+                {% endif %}
 
                 {% if candidate.image_url %}
                 <div class="mx-auto mb-3 mt-4 rounded-circle shadow-sm overflow-hidden border border-2 border-white" style="width: 110px; height: 110px;">
@@ -96,25 +119,26 @@
                     {{ candidate.manifesto }}
                 </p>
 
-                {% if can_vote %}
-                    <button class="btn btn-custom w-100 mt-3 vote-btn"
-                            data-cid="{{ candidate.id }}"
-                            data-cname="{{ candidate.name }}"
-                            data-eid="{{ election.id }}">
-                        <i class="fa-solid fa-check-to-slot me-1"></i> 投TA一票
-                    </button>
-                {% else %}
-                    <button class="btn btn-secondary w-100 mt-3" disabled style="opacity: 0.6;">
-                        {% if has_voted %}
-                            <i class="fa-solid fa-check me-1"></i> 您已投票
-                        {% elif not_started %}
-                            <i class="fa-solid fa-lock me-1"></i> 尚未开启
-                        {% elif is_expired %}
-                            <i class="fa-solid fa-ban me-1"></i> 已截止
-                        {% else %}
-                            <i class="fa-solid fa-lock me-1"></i> 暂时锁定
-                        {% endif %}
-                    </button>
+                {% if not election.is_multi_choice %}
+                    {% if can_vote %}
+                        <button class="btn btn-custom w-100 mt-3 single-vote-btn"
+                                data-cid="{{ candidate.id }}"
+                                onclick="doSingleVote('{{ candidate.id }}', '{{ candidate.name }}')">
+                            <i class="fa-solid fa-check-to-slot me-1"></i> 投TA一票
+                        </button>
+                    {% else %}
+                        <button class="btn btn-secondary w-100 mt-3" disabled style="opacity: 0.6;">
+                            {% if has_voted %}
+                                <i class="fa-solid fa-check me-1"></i> 您已投票
+                            {% elif not_started %}
+                                <i class="fa-solid fa-lock me-1"></i> 尚未开启
+                            {% elif is_expired %}
+                                <i class="fa-solid fa-ban me-1"></i> 已截止
+                            {% else %}
+                                <i class="fa-solid fa-lock me-1"></i> 权限锁定
+                            {% endif %}
+                        </button>
+                    {% endif %}
                 {% endif %}
             </div>
         </div>
@@ -128,54 +152,117 @@
         </div>
     {% endif %}
 </div>
+
+{% if election.is_multi_choice and can_vote %}
+<div class="fixed-bottom p-3 animate__animated animate__slideInUp" style="z-index: 1030;">
+    <div class="container">
+        <div class="glass-card bg-white border shadow-lg p-3 d-flex justify-content-between align-items-center">
+            <div>
+                <span class="text-muted">当前选择：</span>
+                <span id="selected-count" class="badge bg-primary fs-6 rounded-pill">0</span>
+                <span class="text-muted small ms-1">位候选人</span>
+            </div>
+            <button class="btn btn-custom px-5" onclick="doMultiVote()">
+                <i class="fa-solid fa-paper-plane me-1"></i> 提交多选选票
+            </button>
+        </div>
+    </div>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
 <script>
-    // 逻辑保持不变，但现在的 vote-btn 只会在 can_vote 为真时渲染到 DOM 中
-    document.querySelectorAll('.vote-btn').forEach(button => {
-        button.addEventListener('click', function() {
-            const candidateId = this.getAttribute('data-cid');
-            const candidateName = this.getAttribute('data-cname');
-            const electionId = this.getAttribute('data-eid');
+    const ELECTION_ID = "{{ election.id }}";
 
-            Swal.fire({
-                title: '请确认您的选择',
-                html: `您确定要将神圣的一票投给 <b>${candidateName}</b> 吗？<br><small class='text-danger'>投票后不可更改，且每人仅限一票！</small>`,
-                icon: 'question',
-                showCancelButton: true,
-                confirmButtonColor: '#4776E6',
-                cancelButtonColor: '#6c757d',
-                confirmButtonText: '<i class="fa-solid fa-paper-plane me-1"></i> 确认投票',
-                cancelButtonText: '让我再想想',
-                showLoaderOnConfirm: true,
-                preConfirm: () => {
-                    return fetch('/api/vote/do_vote', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ election_id: electionId, candidate_id: candidateId })
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.code !== 200) { throw new Error(data.msg); }
-                        return data;
-                    })
-                    .catch(error => { Swal.showValidationMessage(`投票失败: ${error.message}`); });
-                },
-                allowOutsideClick: () => !Swal.isLoading()
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    Swal.fire({
-                        title: '投票成功！',
-                        text: '感谢您的参与，您的安全投票凭证已生成。',
-                        icon: 'success',
-                        confirmButtonColor: '#4776E6'
-                    }).then(() => {
-                        window.location.reload();
-                    });
-                }
-            });
+    function doSingleVote(cid, name) {
+        Swal.fire({
+            title: '确认投票',
+            html: `您确定要投给 <b>${name}</b> 吗？<br><small class='text-danger'>投票后不可更改！</small>`,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#4776E6',
+            confirmButtonText: '确认投票',
+            cancelButtonText: '取消',
+            showLoaderOnConfirm: true,
+            preConfirm: () => {
+                return fetch('/api/vote/do_vote', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ election_id: ELECTION_ID, candidate_ids: [cid] })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.code !== 200) throw new Error(data.msg);
+                    return data;
+                })
+                .catch(err => Swal.showValidationMessage(`失败: ${err.message}`));
+            }
+        }).then(result => {
+            if (result.isConfirmed) {
+                Swal.fire('投票成功', '', 'success').then(() => window.location.reload());
+            }
         });
-    });
+    }
+
+    function toggleCandidate(cid, card) {
+        const checkbox = document.getElementById('check-' + cid);
+        checkbox.checked = !checkbox.checked;
+        if(checkbox.checked) {
+            card.classList.add('border-primary', 'shadow');
+        } else {
+            card.classList.remove('border-primary', 'shadow');
+        }
+        updateCount();
+    }
+
+    function updateCount() {
+        const count = document.querySelectorAll('.candidate-checkbox:checked').length;
+        const countBadge = document.getElementById('selected-count');
+        if(countBadge) countBadge.innerText = count;
+    }
+
+    function doMultiVote() {
+        const selected = Array.from(document.querySelectorAll('.candidate-checkbox:checked')).map(el => el.value);
+        if (selected.length === 0) {
+            return Swal.fire('提示', '请至少选择一位候选人', 'warning');
+        }
+
+        Swal.fire({
+            title: '确认提交',
+            text: `您当前选择了 ${selected.length} 项，确认提交吗？`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#4776E6',
+            confirmButtonText: '提交选票',
+            preConfirm: () => {
+                return fetch('/api/vote/do_vote', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ election_id: ELECTION_ID, candidate_ids: selected })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.code !== 200) throw new Error(data.msg);
+                    return data;
+                })
+                .catch(err => Swal.showValidationMessage(`失败: ${err.message}`));
+            }
+        }).then(result => {
+            if (result.isConfirmed) {
+                Swal.fire('投票成功', '多选投票已记录', 'success').then(() => window.location.reload());
+            }
+        });
+    }
 </script>
+
+<style>
+    .multi-vote-card.border-primary {
+        border: 2px solid #4776E6 !important;
+        background: rgba(71, 118, 230, 0.05);
+    }
+    .candidate-checkbox:checked + label {
+        color: #4776E6;
+    }
+</style>
 {% endblock %}
