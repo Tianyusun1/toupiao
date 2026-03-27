@@ -29,12 +29,7 @@
         <p class="text-muted mb-0">参与校园决策，投出属于你的关键一票。</p>
     </div>
 
-    <button class="btn btn-custom shadow-lg px-4"
-        {% if session.get('is_approved') == False and session.get('role') != 'admin' %}
-            onclick="Swal.fire({title: '权限受限', text: '您的账号尚未通过审核，无法发起提议', icon: 'warning', confirmButtonColor: '#4776E6'})"
-        {% else %}
-            data-bs-toggle="modal" data-bs-target="#proposeModal"
-        {% endif %}>
+    <button class="btn btn-custom shadow-lg px-4" data-bs-toggle="modal" data-bs-target="#proposeModal">
         <i class="fa-solid fa-plus-circle me-1"></i> 发起投票提议
     </button>
 </div>
@@ -108,18 +103,18 @@
     <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content border-0 shadow-lg" style="border-radius: 20px;">
             <div class="modal-header border-0 pb-0">
-                <h5 class="fw-bold pt-3 px-3"><i class="fa-solid fa-lightbulb text-warning me-2"></i>提交投票提议</h5>
+                <h5 class="fw-bold pt-3 px-3"><i class="fa-solid fa-lightbulb text-warning me-2"></i>发起投票项目</h5>
                 <button type="button" class="btn-close me-2" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body p-4">
                 <form id="proposeForm" enctype="multipart/form-data">
                     <div class="mb-3">
                         <label class="form-label small fw-bold">项目标题</label>
-                        <input type="text" id="prop-title" class="form-control border-0 bg-light py-2" placeholder="例如：关于增加食堂夜宵档口的投票" required>
+                        <input type="text" id="prop-title" class="form-control border-0 bg-light py-2" placeholder="例如：关于增加食堂夜宵档口的投票">
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-bold">详细描述</label>
-                        <textarea id="prop-desc" class="form-control border-0 bg-light" rows="3" placeholder="请详细说明您发起此次投票的目的和背景..." required></textarea>
+                        <textarea id="prop-desc" class="form-control border-0 bg-light" rows="3" placeholder="请详细说明您发起此次投票的目的和背景..."></textarea>
                     </div>
 
                     <div class="row mb-3">
@@ -129,11 +124,11 @@
                         </div>
                         <div class="col-md-6 mb-2">
                             <label class="form-label small fw-bold">开始时间</label>
-                            <input type="datetime-local" id="prop-start-time" class="form-control border-0 bg-light py-2" required>
+                            <input type="datetime-local" id="prop-start-time" class="form-control border-0 bg-light py-2">
                         </div>
                         <div class="col-md-6 mb-2">
                             <label class="form-label small fw-bold">结束时间</label>
-                            <input type="datetime-local" id="prop-end-time" class="form-control border-0 bg-light py-2" required>
+                            <input type="datetime-local" id="prop-end-time" class="form-control border-0 bg-light py-2">
                         </div>
                     </div>
 
@@ -154,31 +149,38 @@
                         <div id="options-container">
                             <div class="input-group mb-2 option-group">
                                 <span class="input-group-text border-0 bg-light"><i class="fa-regular fa-circle-dot text-muted"></i></span>
-                                <input type="text" class="form-control border-0 bg-light opt-input" placeholder="选项 1 名称" required>
-                                <input type="file" class="form-control border-0 bg-light opt-image-input" accept="image/*" title="选项独立图片(可选)">
+                                <input type="text" class="form-control border-0 bg-light opt-input" placeholder="选项 1 名称">
+                                <input type="file" class="form-control border-0 bg-light opt-image-input" accept="image/*" title="选项图片">
                             </div>
                             <div class="input-group mb-2 option-group">
                                 <span class="input-group-text border-0 bg-light"><i class="fa-regular fa-circle-dot text-muted"></i></span>
-                                <input type="text" class="form-control border-0 bg-light opt-input" placeholder="选项 2 名称" required>
-                                <input type="file" class="form-control border-0 bg-light opt-image-input" accept="image/*" title="选项独立图片(可选)">
+                                <input type="text" class="form-control border-0 bg-light opt-input" placeholder="选项 2 名称">
+                                <input type="file" class="form-control border-0 bg-light opt-image-input" accept="image/*" title="选项图片">
                             </div>
                         </div>
                     </div>
 
-                    <div class="alert alert-warning py-2 small border-0 mb-4">
-                        <i class="fa-solid fa-circle-exclamation me-1"></i> 提示：提议及选项提交后需经管理员审核方可公开。
+                    <div class="alert alert-info py-2 small border-0 mb-4">
+                        <i class="fa-solid fa-circle-info me-1"></i> 温馨提示：您可以先“保存草稿”随后再编辑，正式“提交审核”后管理员将进行公示审核。
                     </div>
-                    <div class="d-grid gap-2">
-                        <button type="submit" class="btn btn-custom py-2" id="submitPropBtn">
-                            确认提交审核 <i class="fa-solid fa-paper-plane ms-1"></i>
-                        </button>
+
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <button type="button" class="btn btn-outline-secondary w-100 py-2" id="saveDraftBtn" onclick="handleFormAction('draft')">
+                                保存草稿 <i class="fa-solid fa-floppy-disk ms-1"></i>
+                            </button>
+                        </div>
+                        <div class="col-6">
+                            <button type="button" class="btn btn-custom w-100 py-2" id="submitPropBtn" onclick="handleFormAction('submit')">
+                                提交审核 <i class="fa-solid fa-paper-plane ms-1"></i>
+                            </button>
+                        </div>
                     </div>
                 </form>
             </div>
         </div>
     </div>
 </div>
-
 {% endblock %}
 
 {% block scripts %}
@@ -194,32 +196,44 @@
         div.className = 'input-group mb-2 option-group animate__animated animate__fadeIn';
         div.innerHTML = `
             <span class="input-group-text border-0 bg-light"><i class="fa-regular fa-circle-dot text-muted"></i></span>
-            <input type="text" class="form-control border-0 bg-light opt-input" placeholder="选项 ${count} 名称" required>
-            <input type="file" class="form-control border-0 bg-light opt-image-input" accept="image/*" title="选项独立图片(可选)">
-            <button class="btn btn-outline-danger border-0 bg-light" type="button" onclick="this.parentElement.remove()" title="删除该选项">
+            <input type="text" class="form-control border-0 bg-light opt-input" placeholder="选项 ${count} 名称">
+            <input type="file" class="form-control border-0 bg-light opt-image-input" accept="image/*" title="选项图片">
+            <button class="btn btn-outline-danger border-0 bg-light" type="button" onclick="this.parentElement.remove()" title="删除">
                 <i class="fa-solid fa-xmark"></i>
             </button>
         `;
         container.appendChild(div);
     }
 
-    document.getElementById('proposeForm').addEventListener('submit', function(e) {
-        e.preventDefault();
-        const btn = document.getElementById('submitPropBtn');
+    // [核心函数] 处理草稿和提交的逻辑
+    function handleFormAction(actionType) {
+        const btnDraft = document.getElementById('saveDraftBtn');
+        const btnSubmit = document.getElementById('submitPropBtn');
 
         const title = document.getElementById('prop-title').value.trim();
         const desc = document.getElementById('prop-desc').value.trim();
         const startTime = document.getElementById('prop-start-time').value;
         const endTime = document.getElementById('prop-end-time').value;
+        const isMulti = document.getElementById('prop-multi').checked;
         const imageFile = document.getElementById('prop-image').files[0];
 
-        // 修改点：获取多选开关状态
-        const isMulti = document.getElementById('prop-multi').checked;
+        // 提交审核时的强制校验
+        if (actionType === 'submit') {
+            if (!title || !desc) {
+                Swal.fire('提示', '正式提交审核前，请填写标题和详细描述！', 'warning');
+                return;
+            }
+            if (!startTime || !endTime) {
+                Swal.fire('提示', '请设置投票的开始和结束时间！', 'warning');
+                return;
+            }
+        }
 
         const formData = new FormData();
+        formData.append('action', actionType); // 告诉后端是 draft 还是 submit
         formData.append('title', title);
         formData.append('description', desc);
-        formData.append('is_multi_choice', isMulti); // 添加到表单数据
+        formData.append('is_multi_choice', isMulti);
         if (startTime) formData.append('start_time', startTime);
         if (endTime) formData.append('end_time', endTime);
         if (imageFile) formData.append('image', imageFile);
@@ -240,15 +254,19 @@
             }
         });
 
-        if (optionsTextArray.length < 2) {
-            Swal.fire('提示', '请至少提供 2 个有效的投票选项！', 'warning');
+        if (actionType === 'submit' && optionsTextArray.length < 2) {
+            Swal.fire('提示', '正式投票至少需要 2 个选项！', 'warning');
             return;
         }
 
         formData.append('options', JSON.stringify(optionsTextArray));
 
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i> 正在上传提议及附件...';
+        // UI 状态反馈
+        const targetBtn = actionType === 'draft' ? btnDraft : btnSubmit;
+        const originalHtml = targetBtn.innerHTML;
+        btnDraft.disabled = true;
+        btnSubmit.disabled = true;
+        targetBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i> 处理中...';
 
         fetch('/api/vote/propose', {
             method: 'POST',
@@ -258,27 +276,30 @@
         .then(data => {
             if (data.code === 200) {
                 const modal = bootstrap.Modal.getInstance(document.getElementById('proposeModal'));
-                modal.hide();
+                if(modal) modal.hide();
                 Swal.fire({
-                    title: '提交成功！',
-                    text: '您的提议和各选项图片已进入待审核队列。',
+                    title: '操作成功',
+                    text: data.msg,
                     icon: 'success',
                     confirmButtonColor: '#4776E6'
                 }).then(() => {
                     window.location.reload();
                 });
             } else {
-                Swal.fire('提交失败', data.msg, 'error');
-                btn.disabled = false;
-                btn.innerHTML = '确认提交审核 <i class="fa-solid fa-paper-plane ms-1"></i>';
+                Swal.fire('操作失败', data.msg, 'error');
+                btnDraft.disabled = false;
+                btnSubmit.disabled = false;
+                targetBtn.innerHTML = originalHtml;
             }
         })
         .catch(err => {
             console.error("请求报错:", err);
-            Swal.fire('系统异常', '无法连接到后端，请查看控制台报错', 'error');
-            btn.disabled = false;
+            Swal.fire('系统异常', '无法连接到后端，请检查网络', 'error');
+            btnDraft.disabled = false;
+            btnSubmit.disabled = false;
+            targetBtn.innerHTML = originalHtml;
         });
-    });
+    }
 
     function logout() {
         Swal.fire({

@@ -11,7 +11,7 @@ from Crypto.Cipher import PKCS1_v1_5
 # ================= 压测配置 =================
 BASE_URL = "http://127.0.0.1:5000"
 ADMIN_ID = "admin"
-ADMIN_PWD = "123456"  # 请务必确认你的管理员密码
+ADMIN_PWD = "123456"  # 请务必确认您的管理员密码
 CONCURRENT_THREADS = 50  # 瞬间并发数
 # ============================================
 
@@ -47,6 +47,7 @@ class ConcurrencyEngine:
         print("🛠️ [2/3] 管理员登录并自动审批该账号...")
         self.admin_session.post(f"{BASE_URL}/auth/login",
                                 json={"student_id": ADMIN_ID, "password": self.encrypt(ADMIN_PWD)})
+        # 获取待审核列表
         pending = self.admin_session.get(f"{BASE_URL}/api/admin/users/pending").json().get('data', [])
         for u in pending:
             if u['student_id'] == self.test_sid:
@@ -63,24 +64,26 @@ class ConcurrencyEngine:
         all_elections = self.admin_session.get(f"{BASE_URL}/api/admin/elections/all").json().get('data', [])
 
         target_eid = None
-        # 从列表末尾（最新的）开始往前找 active 状态的项目
+        # 从列表末尾（最新的）开始往前找可用项目
         for e in reversed(all_elections):
-            if e['status'] == 'active':
+            # 修改点：同时支持 'active' 和 'published' 状态，匹配后端业务逻辑
+            if e['status'] in ['active', 'published']:
                 target_eid = e['id']
                 print(f"🎯 锁定目标项目 ID: {target_eid} (标题: {e['title']})")
                 break
 
         if not target_eid:
-            print("❌ 错误：翻遍了数据库，也没找到一个正在进行中的项目！请先发起一个投票。")
+            print("❌ 错误：翻遍了数据库，也没找到一个正在进行中的项目！请确保后台已有审核通过并发布的项目。")
             return
 
         # 2. 动态抓取该项目的 Candidate ID
         print(f"📡 正在从详情页嗅探候选人 ID...")
         detail_html = self.test_user_session.get(f"{BASE_URL}/election/{target_eid}").text
+        # 通过正则表达式提取页面中的候选人 ID
         real_cids = list(set(re.findall(r'data-cid="(\d+)"', detail_html)))
 
         if not real_cids:
-            print("❌ 错误：目标页面没有找到 data-cid 属性，无法执行有效投票。")
+            print("❌ 错误：目标页面没有找到候选人 ID，请确认该投票项目下已添加选项。")
             return
 
         candidate_to_vote = [real_cids[0]]
@@ -90,7 +93,7 @@ class ConcurrencyEngine:
         print(f"🔥 爆发！针对项目 {target_eid} 发动 {CONCURRENT_THREADS} 次瞬时冲击...")
 
         def task(i):
-            # 记录请求发出的时间戳，用于观察瞬时性
+            # 执行投票操作
             res = self.test_user_session.post(f"{BASE_URL}/api/vote/do_vote",
                                               json={"election_id": target_eid, "candidate_ids": candidate_to_vote})
             return res.status_code, res.json().get('msg')
@@ -118,7 +121,7 @@ class ConcurrencyEngine:
 
         print("\n🏆 技术评价:")
         if len(success) == 1:
-            print("【完美】Redis 原子计数器工作正常，成功实现『万军丛中取一首』，有效抵御了并发刷票。")
+            print("【完美】Redis 原子计数器工作正常，成功实现，有效抵御了并发刷票。")
         elif len(success) > 1:
             print(f"【风险】检测到有 {len(success)} 个请求穿透，存在竞态条件（Race Condition），请检查 Redis 逻辑。")
         elif len(denied) > 0:

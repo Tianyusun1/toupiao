@@ -8,7 +8,7 @@ from Crypto.Cipher import PKCS1_v1_5
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 
 
-# --- 高级权限拦截器：用于拦截敏感操作 ---
+# --- 高级权限拦截器：用于拦截敏感操作(如需开放投票，请确保投票路由不再使用此装饰器) ---
 def approval_required(view):
     @functools.wraps(view)
     def wrapped_view(*args, **kwargs):
@@ -65,13 +65,14 @@ def register():
     try:
         db.session.add(new_user)
         db.session.commit()
-        return jsonify({'code': 200, 'msg': '申请已提交！审核期间可登录浏览，但无法投票。'})
+        # [修改处] 更新了文案，因为现在不需要审核也能投票了
+        return jsonify({'code': 200, 'msg': '注册成功！您可以直接登录并参与投票。'})
     except Exception as e:
         db.session.rollback()
         return jsonify({'code': 500, 'msg': f'服务器错误: {str(e)}'}), 500
 
 
-# --- 登录路由：彻底修复 Session 写入问题 ---
+# --- 登录路由：彻底修复 Session 写入问题，并增加黑名单拦截 ---
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'GET':
@@ -109,6 +110,13 @@ def login():
     user = User.query.filter_by(student_id=student_id).first()
 
     if user and user.check_password(password_plain):
+
+        # ==========================================
+        # [新增] 检查黑名单状态，如果被封禁则直接拒绝登录
+        # ==========================================
+        if getattr(user, 'is_banned', False):
+            return jsonify({'code': 403, 'msg': '您的账号已被列入黑名单，禁止登录系统！'}), 403
+
         # 1. 登录前清理旧 Session
         session.clear()
 
@@ -122,7 +130,7 @@ def login():
         # 3. 显式设置持久化（根据 Config 中的 PERMANENT_SESSION_LIFETIME）
         session.permanent = True
 
-        # 终端调试打印，方便你观察
+        # 终端调试打印，方便观察
         print(f"【DEBUG】用户 {user.name} 登录成功，Session ID: {session['user_id']} 已保存")
 
         return jsonify({

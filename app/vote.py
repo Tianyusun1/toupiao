@@ -6,7 +6,7 @@ from datetime import datetime
 from werkzeug.utils import secure_filename
 from flask import Blueprint, request, jsonify, session, current_app
 from app.models import db, Election, Candidate, VoteRecord, User
-from app.auth import login_required, approval_required
+from app.auth import login_required
 from app import redis_client
 from sqlalchemy import func
 import hashlib
@@ -55,10 +55,7 @@ def save_upload_file(file):
         upload_folder = os.path.join(current_app.root_path, 'static', 'uploads')
         os.makedirs(upload_folder, exist_ok=True)
 
-        ext = os.path.splitext(file.filename)[1]
-        if not ext:
-            ext = '.png'
-
+        ext = os.path.splitext(file.filename)[1] or '.png'
         unique_filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}{ext}"
         file_path = os.path.join(upload_folder, unique_filename)
 
@@ -67,90 +64,118 @@ def save_upload_file(file):
     return None
 
 
-# ================= 1. 学生提议功能 (UGC) =================
+# ================= 1. 提议功能：支持详情查询、保存草稿与修改 =================
+
+@vote_bp.route('/proposal/<int:prop_id>', methods=['GET'])
+@login_required
+def get_proposal_detail(prop_id):
+    """获取单个提议详情：解决点击编辑 404 问题"""
+    prop = Election.query.get_or_404(prop_id)
+    # 安全检查：只能查看自己发起的提议
+    if prop.proposer_id != session.get('user_id'):
+        return jsonify({'code': 403, 'msg': '无权访问此提议内容'}), 403
+
+    candidates = Candidate.query.filter_by(election_id=prop.id).all()
+
+    return jsonify({
+        'code': 200,
+        'data': {
+            'id': prop.id,
+            'title': prop.title,
+            'description': prop.description,
+            'image_url': prop.image_url,
+            'is_multi_choice': prop.is_multi_choice,
+            'start_time': prop.start_time.strftime('%Y-%m-%dT%H:%M') if prop.start_time else "",
+            'end_time': prop.end_time.strftime('%Y-%m-%dT%H:%M') if prop.end_time else "",
+            'options': [{'name': c.name, 'image': c.image_url} for c in candidates]
+        }
+    })
+
 
 @vote_bp.route('/propose', methods=['POST'])
 @login_required
-@approval_required
-@rate_limit(limit=1, period=60, key_prefix='propose')
+@rate_limit(limit=5, period=60, key_prefix='propose')
 def submit_proposal():
-    """学生提交投票项目提议"""
+    """学生提交/更新投票项目提议：支持【保存草稿】与【更新旧草稿】"""
+    prop_id = request.form.get('id')  # 获取ID用于判断是新建还是更新
     title = request.form.get('title')
     description = request.form.get('description')
     start_time_str = request.form.get('start_time')
     end_time_str = request.form.get('end_time')
     is_multi = request.form.get('is_multi_choice') == 'true'
+    action = request.form.get('action', 'submit')  # 'draft' 或 'submit'
 
-    options_str = request.form.get('options', '[]')
-    try:
-        options = json.loads(options_str)
-    except:
-        options = []
+    # 1. 查找现有提议或创建新对象
+    if prop_id:
+        proposal = Election.query.get(prop_id)
+        if not proposal or proposal.proposer_id != session['user_id']:
+            return jsonify({'code': 403, 'msg': '无权修改该提议'}), 403
+        # 只有在草稿、审核中或被驳回时允许修改
+        if proposal.review_status not in ['draft', 'pending', 'rejected']:
+            return jsonify({'code': 400, 'msg': '该投票项目已发布或已结束，无法修改'}), 400
+    else:
+        proposal = Election(proposer_id=session['user_id'], status='draft')
 
-    if not title or not description:
-        return jsonify({'code': 400, 'msg': '标题和描述不能为空'}), 400
+    # 2. 基础校验 (草稿模式下放宽校验)
+    if action == 'submit':
+        if not title or not description:
+            return jsonify({'code': 400, 'msg': '正式提交审核前，请填写标题和描述'}), 400
+    else:
+        title = title or f"未命名草稿_{datetime.now().strftime('%m%d_%H%M')}"
 
-    if len(options) < 2:
-        return jsonify({'code': 400, 'msg': '一个投票至少需要提供2个选项'}), 400
+    # 3. 更新字段内容
+    proposal.title = title
+    proposal.description = description
+    proposal.is_multi_choice = is_multi
+    proposal.review_status = 'draft' if action == 'draft' else 'pending'
 
-    start_time = None
-    end_time = None
+    # 时间处理
     try:
         if start_time_str:
-            start_time = datetime.strptime(start_time_str, '%Y-%m-%dT%H:%M')
+            proposal.start_time = datetime.strptime(start_time_str, '%Y-%m-%dT%H:%M')
         if end_time_str:
-            end_time = datetime.strptime(end_time_str, '%Y-%m-%dT%H:%M')
+            proposal.end_time = datetime.strptime(end_time_str, '%Y-%m-%dT%H:%M')
     except ValueError:
-        return jsonify({'code': 400, 'msg': '时间格式错误'}), 400
+        if action == 'submit':
+            return jsonify({'code': 400, 'msg': '时间格式不正确'}), 400
 
-    election_image_url = None
+    # 海报处理
     if 'image' in request.files:
-        election_image_url = save_upload_file(request.files['image'])
-
-    new_proposal = Election(
-        title=title,
-        description=description,
-        image_url=election_image_url,
-        is_multi_choice=is_multi,
-        start_time=start_time,
-        end_time=end_time,
-        proposer_id=session['user_id'],
-        review_status='pending',
-        status='draft',
-        is_official=False
-    )
+        proposal.image_url = save_upload_file(request.files['image'])
 
     try:
-        db.session.add(new_proposal)
+        db.session.add(proposal)
         db.session.flush()
 
+        # 4. 更新选项：编辑模式下先删除旧选项再重新插入
+        options_str = request.form.get('options', '[]')
+        options = json.loads(options_str)
+
+        Candidate.query.filter_by(election_id=proposal.id).delete()
         for i, opt_name in enumerate(options):
             if opt_name.strip():
                 opt_img_key = f'option_image_{i}'
-                opt_image_url = None
-                if opt_img_key in request.files:
-                    opt_image_url = save_upload_file(request.files[opt_img_key])
+                opt_image_url = save_upload_file(request.files.get(opt_img_key))
 
                 new_candidate = Candidate(
-                    election_id=new_proposal.id,
+                    election_id=proposal.id,
                     name=opt_name.strip(),
-                    manifesto="发起人预设选项",
-                    department=session.get('department'),
+                    manifesto="发起人预设",
                     image_url=opt_image_url,
-                    is_qualified=True
+                    is_qualified=True if action == 'submit' else False
                 )
                 db.session.add(new_candidate)
 
         db.session.commit()
-        return jsonify({'code': 200, 'msg': '提议及选项已成功提交，请等待管理员审核！'})
+        msg = '草稿已成功保存！' if action == 'draft' else '提议已提交，请等待管理员审核！'
+        return jsonify({'code': 200, 'msg': msg})
     except Exception as e:
         db.session.rollback()
-        return jsonify({'code': 500, 'msg': str(e)}), 500
+        return jsonify({'code': 500, 'msg': f'服务器错误: {str(e)}'}), 500
 
 
 @vote_bp.route('/apply_candidate', methods=['POST'])
 @login_required
-@approval_required
 @rate_limit(limit=1, period=60, key_prefix='apply')
 def apply_candidate():
     """学生自荐或推荐他人成为候选人"""
@@ -188,12 +213,11 @@ def apply_candidate():
 
 
 # ==========================================
-# [修改] 核心投票机制 (集成"后悔药"选票修改功能)
+# [修改] 核心投票机制：所有人均可参与
 # ==========================================
 @vote_bp.route('/do_vote', methods=['POST'])
 @login_required
-@approval_required
-@rate_limit(limit=1, period=3, key_prefix='vote')  # 稍微放宽投票接口限流，防误伤
+@rate_limit(limit=1, period=3, key_prefix='vote')
 def do_vote():
     """执行投票：支持单选与多选，支持选票修改"""
     data = request.get_json()
@@ -214,23 +238,20 @@ def do_vote():
     if election.end_time and now > election.end_time:
         return jsonify({'code': 400, 'msg': '投票已经结束'}), 400
 
-    # 兼容之前遗留的 active 状态和新加入的 published 状态
     if election.status not in ['active', 'published']:
         return jsonify({'code': 400, 'msg': '投票未开启'}), 400
 
     if not election.is_multi_choice and len(candidate_ids) > 1:
         return jsonify({'code': 400, 'msg': '该投票项目仅支持单选'}), 400
 
-    # === 核心修改区：后悔药逻辑 ===
     existing_records = VoteRecord.query.filter_by(user_id=user_id, election_id=election_id).all()
 
     action_msg = '投票成功！'
     if existing_records:
         if getattr(election, 'allow_update_vote', False):
-            # 允许修改选票：物理删除旧记录（系统通过count统计得票，删除记录等于自动退票）
             for r in existing_records:
                 db.session.delete(r)
-            db.session.flush()  # 刷新 session 状态，确保下方插入时不冲突
+            db.session.flush()
             action_msg = '选票修改成功！旧记录已作废。'
         else:
             return jsonify({'code': 403, 'msg': '您已参与过本次投票，且该项目不允许修改选票'}), 403
@@ -248,7 +269,7 @@ def do_vote():
                 candidate_id=cid,
                 ip_address=request.remote_addr
             )
-            new_vote.generate_hash()  # 生成全新的安全凭证
+            new_vote.generate_hash()
             db.session.add(new_vote)
             tokens.append(new_vote.vote_hash)
 
@@ -259,7 +280,7 @@ def do_vote():
         return jsonify({'code': 500, 'msg': f'系统繁忙: {str(e)}'}), 500
 
 
-# ================= 3. 个人数据与资料修改接口 =================
+# ================= 3. 个人中心相关接口 =================
 
 @vote_bp.route('/update_profile', methods=['POST'])
 @login_required
@@ -285,7 +306,7 @@ def update_profile():
 @vote_bp.route('/my_records', methods=['GET'])
 @login_required
 def get_personal_records():
-    """获取个人投票历史"""
+    """获取个人投票历史及【提议/草稿】数据"""
     user_id = session['user_id']
     user = User.query.get(user_id)
 
@@ -307,6 +328,7 @@ def get_personal_records():
             'hash': v.VoteRecord.vote_hash
         } for v in votes],
         'proposals': [{
+            'id': p.id,
             'title': p.title,
             'status': p.review_status,
             'feedback': p.admin_feedback
@@ -314,15 +336,13 @@ def get_personal_records():
     })
 
 
-# ==========================================
-# [优化] 增强统计接口 (加入 Redis 缓存，防止 AI 模型压垮服务器)
-# ==========================================
+# ================= 4. 统计与审计接口 =================
+
 @vote_bp.route('/statistics/<int:election_id>', methods=['GET'])
 @login_required
 def get_statistics(election_id):
     """提供统计数据接口：集成 ECharts 可视化与 AI 安全审计"""
 
-    # 1. 尝试从 Redis 读取缓存 (缓存有效时间 60 秒)
     cache_key = f"stats:election:{election_id}"
     if redis_client:
         cached_data = redis_client.get(cache_key)
@@ -337,7 +357,6 @@ def get_statistics(election_id):
     if not election:
         return jsonify({'code': 404, 'msg': '选举项目不存在'}), 404
 
-    # 2. 基础票数统计
     all_records = VoteRecord.query.filter_by(election_id=election_id).order_by(VoteRecord.vote_time).all()
     total_votes = len(all_records)
 
@@ -345,7 +364,6 @@ def get_statistics(election_id):
     c_names = [c.name for c in candidates]
     c_votes = [VoteRecord.query.filter_by(candidate_id=c.id).count() for c in candidates]
 
-    # 3. 投票热度趋势 (按小时聚合)
     time_series = {}
     for r in all_records:
         hour_key = r.vote_time.strftime('%m-%d %H:00')
@@ -354,7 +372,6 @@ def get_statistics(election_id):
     trend_labels = sorted(time_series.keys())
     trend_values = [time_series[k] for k in trend_labels]
 
-    # 4. 机器学习安全审计 (Isolation Forest)
     risk_report = {"level": "低", "suspicious_count": 0, "score": 100}
 
     if total_votes > 10:
@@ -381,7 +398,6 @@ def get_statistics(election_id):
         except Exception as e:
             current_app.logger.error(f"AI Audit Error: {e}")
 
-    # 5. 院系画像分布
     dept_counts = db.session.query(
         User.department,
         func.count(VoteRecord.id)
@@ -389,7 +405,6 @@ def get_statistics(election_id):
         VoteRecord.election_id == election_id
     ).group_by(User.department).all()
 
-    # 构建返回数据
     response_data = {
         'title': election.title,
         'total_votes': total_votes,
@@ -400,7 +415,6 @@ def get_statistics(election_id):
         'security': risk_report
     }
 
-    # 6. 将计算结果写入 Redis 缓存
     if redis_client:
         redis_client.setex(cache_key, 60, json.dumps(response_data))
 

@@ -74,13 +74,16 @@ def election_detail(election_id):
     is_expired = election.end_time and now > election.end_time
     not_started = election.start_time and now < election.start_time
 
-    # c. 核心改进：检查用户审核状态 (管理员默认通过)
+    # c. 检查用户审核状态 (仅用于前端展示，不再限制投票)
     is_approved = session.get('is_approved') == True or session.get('role') == 'admin'
 
-    # 最终决定按钮状态的布尔值：
-    # 必须满足：没投过票 + 不在非投票时间段 + 项目激活 + 【用户已审核通过】
+    # ==========================================
+    # [核心修改] 决定按钮状态的布尔值：
+    # 移除了 and is_approved，所有人皆可投票
+    # 状态判断加入了 published，防止之前的不同状态命名导致无法投票
+    # ==========================================
     can_vote = (not has_voted) and (not is_expired) and (not not_started) and \
-               (election.status == 'active') and is_approved
+               (election.status in ['active', 'published'])
 
     return render_template('election_detail.html',
                            election=election,

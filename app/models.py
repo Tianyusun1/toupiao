@@ -105,6 +105,10 @@ class VoteRecord(db.Model):
         生成唯一的投票凭证。
         增加 candidate_id 参与计算，确保多选时每条记录产生不同的哈希指纹。
         """
+        # [核心修复] 在对象提交到数据库前，vote_time 可能是 None，需要手动赋初始值
+        if not self.vote_time:
+            self.vote_time = datetime.utcnow()
+
         # [优化] 将时间精度强制截断到秒，避免存入数据库或导出报表时微秒丢失，导致后期重新计算哈希对不上
         self.vote_time = self.vote_time.replace(microsecond=0)
 

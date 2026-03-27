@@ -64,12 +64,63 @@
                             <th>安全存证 (Hash)</th>
                         </tr>
                     </thead>
-                    <tbody id="vote-history-body" class="small">
-                        </tbody>
+                    <tbody id="vote-history-body" class="small"></tbody>
                 </table>
             </div>
-            <div class="alert alert-info py-2 mt-3" style="font-size: 0.75rem;">
-                <i class="fa-solid fa-circle-info me-1"></i> <b>安全提示：</b> 每一个 Hash 值都是基于您的身份与投票时间加密生成的唯一凭证，确保投票真实不可篡改。
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="editPropModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 shadow-lg" style="border-radius: 20px;">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="fw-bold pt-3 px-3"><i class="fa-solid fa-pen-to-square text-primary me-2"></i>修改我的提议</h5>
+                <button type="button" class="btn-close me-2" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <form id="editPropForm" enctype="multipart/form-data">
+                    <input type="hidden" id="edit-prop-id">
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">项目标题</label>
+                        <input type="text" id="edit-prop-title" class="form-control border-0 bg-light py-2">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">详细描述</label>
+                        <textarea id="edit-prop-desc" class="form-control border-0 bg-light" rows="3"></textarea>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-12 mb-3">
+                            <label class="form-label small fw-bold">更新宣传海报 (可选)</label>
+                            <input type="file" id="edit-prop-image" class="form-control border-0 bg-light py-2" accept="image/*">
+                        </div>
+                        <div class="col-md-6 mb-2">
+                            <label class="form-label small fw-bold">开始时间</label>
+                            <input type="datetime-local" id="edit-prop-start" class="form-control border-0 bg-light py-2">
+                        </div>
+                        <div class="col-md-6 mb-2">
+                            <label class="form-label small fw-bold">结束时间</label>
+                            <input type="datetime-local" id="edit-prop-end" class="form-control border-0 bg-light py-2">
+                        </div>
+                    </div>
+                    <div class="mb-4">
+                        <label class="form-label small fw-bold d-flex justify-content-between align-items-center">
+                            <span>投票选项</span>
+                            <button type="button" class="btn btn-sm btn-outline-primary rounded-pill py-0 px-2" onclick="addEditOption()">
+                                <i class="fa-solid fa-plus"></i> 添加
+                            </button>
+                        </label>
+                        <div id="edit-options-container"></div>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <button type="button" class="btn btn-outline-secondary w-100 py-2" onclick="submitEdit('draft')">保存草稿</button>
+                        </div>
+                        <div class="col-6">
+                            <button type="button" class="btn btn-primary w-100 py-2" onclick="submitEdit('submit')">提交并审核</button>
+                        </div>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
@@ -78,80 +129,129 @@
 
 {% block scripts %}
 <script>
-    // 定义修改简介的函数
-    function editBio() {
-        const currentBio = document.getElementById('display-bio').innerText.trim();
-        const placeholder = "这个人很懒，什么都没写...";
+    // 关键修复：页面加载后将 Modal 移动到 body 根部，防止因父容器动画导致的“灰屏”现象
+    document.addEventListener('DOMContentLoaded', () => {
+        const modalEl = document.getElementById('editPropModal');
+        document.body.appendChild(modalEl);
+        initProfilePage();
+    });
 
-        Swal.fire({
-            title: '修改个人简介',
-            input: 'textarea',
-            inputLabel: '展示您的个性宣言',
-            inputValue: currentBio === placeholder ? '' : currentBio,
-            inputPlaceholder: '请输入新的简介内容...',
-            showCancelButton: true,
-            confirmButtonText: '提交保存',
-            cancelButtonText: '取消',
-            confirmButtonColor: '#4776E6',
-            preConfirm: (newBio) => {
-                return fetch('/api/vote/update_profile', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ bio: newBio })
-                })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.code !== 200) throw new Error(data.msg);
-                    return newBio;
-                })
-                .catch(error => {
-                    Swal.showValidationMessage(`保存失败: ${error.message}`);
-                });
-            },
-            allowOutsideClick: () => !Swal.isLoading()
-        }).then((result) => {
-            if (result.isConfirmed) {
-                document.getElementById('display-bio').innerText = result.value || placeholder;
-                Swal.fire({
-                    icon: 'success',
-                    title: '更新成功',
-                    timer: 1500,
-                    showConfirmButton: false
-                });
-            }
-        });
+    function addEditOption(name = '') {
+        const container = document.getElementById('edit-options-container');
+        const div = document.createElement('div');
+        div.className = 'input-group mb-2 edit-option-group animate__animated animate__fadeIn';
+        div.innerHTML = `
+            <span class="input-group-text border-0 bg-light"><i class="fa-regular fa-circle-dot"></i></span>
+            <input type="text" class="form-control border-0 bg-light edit-opt-input" value="${name}" placeholder="选项名称">
+            <input type="file" class="form-control border-0 bg-light edit-opt-image-input" style="max-width:200px" accept="image/*">
+            <button class="btn btn-outline-danger border-0 bg-light" type="button" onclick="this.parentElement.remove()">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        `;
+        container.appendChild(div);
     }
 
-    document.addEventListener('DOMContentLoaded', () => {
-        // 1. 获取个人详细记录及简介
+    function openEditModal(propId) {
+        fetch(`/api/vote/proposal/${propId}`)
+            .then(res => res.json())
+            .then(res => {
+                if (res.code !== 200) {
+                    Swal.fire('获取详情失败', res.msg, 'error');
+                    return;
+                }
+                const p = res.data;
+                document.getElementById('edit-prop-id').value = p.id;
+                document.getElementById('edit-prop-title').value = p.title;
+                document.getElementById('edit-prop-desc').value = p.description;
+                document.getElementById('edit-prop-start').value = p.start_time;
+                document.getElementById('edit-prop-end').value = p.end_time;
+
+                const container = document.getElementById('edit-options-container');
+                container.innerHTML = '';
+                if (p.options && p.options.length > 0) {
+                    p.options.forEach(opt => addEditOption(opt.name));
+                } else {
+                    addEditOption(); addEditOption();
+                }
+
+                // 使用 getOrCreateInstance 确保弹窗逻辑稳定
+                const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('editPropModal'));
+                modal.show();
+            })
+            .catch(err => Swal.fire('系统异常', '无法连接到服务器', 'error'));
+    }
+
+    function submitEdit(actionType) {
+        const formData = new FormData();
+        const propId = document.getElementById('edit-prop-id').value;
+        const title = document.getElementById('edit-prop-title').value.trim();
+        const desc = document.getElementById('edit-prop-desc').value.trim();
+
+        if (actionType === 'submit' && (!title || !desc)) {
+            Swal.fire('提示', '正式提交审核前请填写标题和描述', 'warning');
+            return;
+        }
+
+        formData.append('id', propId);
+        formData.append('action', actionType);
+        formData.append('title', title);
+        formData.append('description', desc);
+        formData.append('start_time', document.getElementById('edit-prop-start').value);
+        formData.append('end_time', document.getElementById('edit-prop-end').value);
+
+        const imgFile = document.getElementById('edit-prop-image').files[0];
+        if (imgFile) formData.append('image', imgFile);
+
+        const opts = [];
+        document.querySelectorAll('.edit-option-group').forEach((group, index) => {
+            const name = group.querySelector('.edit-opt-input').value.trim();
+            if (name) {
+                opts.push(name);
+                const file = group.querySelector('.edit-opt-image-input').files[0];
+                if (file) formData.append(`option_image_${index}`, file);
+            }
+        });
+        formData.append('options', JSON.stringify(opts));
+
+        fetch('/api/vote/propose', { method: 'POST', body: formData })
+            .then(res => res.json())
+            .then(data => {
+                if (data.code === 200) {
+                    Swal.fire('成功', data.msg, 'success').then(() => location.reload());
+                } else {
+                    Swal.fire('失败', data.msg, 'error');
+                }
+            });
+    }
+
+    function initProfilePage() {
         fetch('/api/vote/my_records')
             .then(res => res.json())
             .then(data => {
-                // 渲染简介
+                // 1. 基本资料
                 document.getElementById('display-bio').innerText = data.bio || "这个人很懒，什么都没写...";
+                document.getElementById('display-sid').innerText = "{{ session.get('student_id') }}";
+                document.getElementById('display-dept').innerText = "{{ session.get('department') or '未知学院' }}";
+                document.getElementById('display-major').innerText = "{{ session.get('major') or '暂无专业信息' }}";
 
-                // 渲染投票历史
+                // 2. 投票历史
                 const voteBody = document.getElementById('vote-history-body');
-                if(data.votes.length === 0) {
-                    voteBody.innerHTML = '<tr><td colspan="4" class="text-center py-4">暂无投票记录</td></tr>';
-                } else {
-                    voteBody.innerHTML = data.votes.map(v => `
+                voteBody.innerHTML = data.votes.length === 0 ? '<tr><td colspan="4" class="text-center py-4">暂无记录</td></tr>' :
+                    data.votes.map(v => `
                         <tr>
                             <td class="fw-bold">${v.election}</td>
                             <td><span class="badge bg-primary-subtle text-primary">${v.candidate}</span></td>
                             <td>${v.time}</td>
-                            <td><code class="text-truncate d-inline-block" style="max-width: 120px;" title="${v.hash}">${v.hash}</code></td>
+                            <td><code title="${v.hash}">${v.hash.substring(0, 10)}...</code></td>
                         </tr>
                     `).join('');
-                }
 
-                // 渲染提议进度 (重点优化：增加草稿箱状态支持)
+                // 3. 提议列表
                 const propList = document.getElementById('proposal-list');
-                if(data.proposals.length === 0) {
-                    propList.innerHTML = '<div class="col-12 text-center py-3 text-muted">您尚未发起过投票提议</div>';
+                if (data.proposals.length === 0) {
+                    propList.innerHTML = '<div class="col-12 text-center py-3 text-muted">您尚未发起过提议</div>';
                 } else {
                     propList.innerHTML = data.proposals.map(p => {
-                        // 修改：支持识别 published, approved, rejected, draft, 以及 pending(默认)
                         let statusColor = p.status === 'published' || p.status === 'approved' ? 'success' :
                                           (p.status === 'rejected' ? 'danger' :
                                           (p.status === 'draft' ? 'secondary' : 'warning'));
@@ -160,48 +260,59 @@
                                          (p.status === 'rejected' ? '已驳回' :
                                          (p.status === 'draft' ? '草稿箱' : '审核中'));
 
-                        // 驳回理由 UI 增强
-                        let feedbackHtml = '';
-                        if (p.status === 'rejected' && p.feedback) {
-                            feedbackHtml = `
-                            <div class="mt-3 p-2 bg-danger-subtle rounded border border-danger-subtle animate__animated animate__shakeX">
-                                <small class="text-danger fw-bold d-block mb-1">
-                                    <i class="fa-solid fa-comment-dots me-1"></i> 管理员驳回意见：
-                                </small>
-                                <p class="small text-danger mb-0">${p.feedback}</p>
-                            </div>
-                            `;
-                        }
+                        let canEdit = ['draft', 'rejected', 'pending'].includes(p.status);
 
                         return `
                         <div class="col-md-6">
-                            <div class="glass-card p-3 h-100 border">
+                            <div class="glass-card p-3 h-100 border transition-hover">
                                 <div class="d-flex justify-content-between align-items-start mb-2">
                                     <h6 class="fw-bold mb-0">${p.title}</h6>
                                     <span class="badge bg-${statusColor}">${statusText}</span>
                                 </div>
-                                ${feedbackHtml}
+                                ${p.status === 'rejected' ? `<small class="text-danger d-block mb-2">理由: ${p.feedback}</small>` : ''}
+                                ${canEdit ? `
+                                    <button class="btn btn-sm btn-link text-primary p-0 fw-bold" onclick="openEditModal(${p.id})">
+                                        <i class="fa-solid fa-edit me-1"></i> 点击编辑
+                                    </button>
+                                ` : '<small class="text-muted"><i class="fa-solid fa-lock me-1"></i>已锁定</small>'}
                             </div>
-                        </div>
-                        `;
+                        </div>`;
                     }).join('');
                 }
+
+                // 4. 审核勋章
+                const isApproved = "{{ session.get('is_approved') }}" === "True";
+                const badge = document.getElementById('status-badge');
+                if(isApproved) {
+                    badge.className = "position-absolute bottom-0 end-0 badge rounded-pill bg-success border border-2 border-white";
+                    badge.innerHTML = '<i class="fa-solid fa-check me-1"></i>已认证';
+                } else {
+                    badge.className = "position-absolute bottom-0 end-0 badge rounded-pill bg-warning text-dark border border-2 border-white";
+                    badge.innerHTML = '<i class="fa-solid fa-clock me-1"></i>待审核';
+                }
             });
+    }
 
-        // 2. 渲染身份基础信息
-        document.getElementById('display-sid').innerText = "{{ session.get('student_id') }}";
-        document.getElementById('display-dept').innerText = "{{ session.get('department') or '未知学院' }}";
-        document.getElementById('display-major').innerText = "{{ session.get('major') or '暂无专业信息' }}";
-
-        const isApproved = "{{ session.get('is_approved') }}" === "True";
-        const badge = document.getElementById('status-badge');
-        if(isApproved) {
-            badge.className = "position-absolute bottom-0 end-0 badge rounded-pill bg-success border border-2 border-white";
-            badge.innerHTML = '<i class="fa-solid fa-check me-1"></i>已认证';
-        } else {
-            badge.className = "position-absolute bottom-0 end-0 badge rounded-pill bg-warning text-dark border border-2 border-white";
-            badge.innerHTML = '<i class="fa-solid fa-clock me-1"></i>待审核';
-        }
-    });
+    function editBio() {
+        const currentBio = document.getElementById('display-bio').innerText.trim();
+        Swal.fire({
+            title: '修改个人简介',
+            input: 'textarea',
+            inputValue: currentBio,
+            showCancelButton: true,
+            confirmButtonText: '保存',
+            confirmButtonColor: '#4776E6',
+            preConfirm: (newBio) => {
+                return fetch('/api/vote/update_profile', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ bio: newBio })
+                }).then(res => res.json()).then(data => {
+                    if (data.code !== 200) throw new Error(data.msg);
+                    return newBio;
+                }).catch(e => Swal.showValidationMessage(e.message));
+            }
+        }).then((res) => { if(res.isConfirmed) document.getElementById('display-bio').innerText = res.value; });
+    }
 </script>
 {% endblock %}
