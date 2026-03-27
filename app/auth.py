@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, session, current_app
+from flask import Blueprint, request, jsonify, session, current_app, render_template, redirect, url_for
 from app.models import db, User
 import functools
 import base64
@@ -8,30 +8,21 @@ from Crypto.Cipher import PKCS1_v1_5
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 
 
-# --- 高级权限拦截器：用于拦截敏感操作，但不拦截页面进入 ---
+# --- 高级权限拦截器：用于拦截敏感操作 ---
 def approval_required(view):
-    """
-    高级装饰器。
-    挂载在【提交投票】、【发起提议】等 API 路由上。
-    允许未审核用户进入页面查看，但尝试点击提交时会返回 403。
-    """
-
     @functools.wraps(view)
     def wrapped_view(*args, **kwargs):
         if 'user_id' not in session:
             return jsonify({'code': 401, 'msg': '请先登录'}), 401
-
         user = User.query.get(session['user_id'])
-        # 管理员拥有所有权限；学生则必须 is_approved 为 True
         if not user or (user.role != 'admin' and not user.is_approved):
-            return jsonify({'code': 403, 'msg': '您的账号处于待审核状态，暂无权限执行此操作。请联系管理员！'}), 403
+            return jsonify({'code': 403, 'msg': '您的账号处于待审核状态，暂无权限执行此操作。'}), 403
         return view(*args, **kwargs)
 
     return wrapped_view
 
 
 def login_required(view):
-    """基础装饰器：仅验证是否登录，不验证审核状态"""
     @functools.wraps(view)
     def wrapped_view(*args, **kwargs):
         if 'user_id' not in session:
@@ -41,21 +32,20 @@ def login_required(view):
     return wrapped_view
 
 
-@auth_bp.route('/register', methods=['POST'])
+# --- 注册路由 ---
+@auth_bp.route('/register', methods=['GET', 'POST'])
 def register():
-    """升级版注册：采集学术背景字段"""
+    if request.method == 'GET':
+        return render_template('register.html')
+
     data = request.get_json()
     student_id = data.get('student_id')
     name = data.get('name')
     password = data.get('password')
-
     dept = data.get('department')
-    major = data.get('major')
-    class_name = data.get('class_name')
-    year = data.get('entry_year')
 
     if not all([student_id, name, password, dept]):
-        return jsonify({'code': 400, 'msg': '必填项（学号、姓名、密码、院系）不能为空！'}), 400
+        return jsonify({'code': 400, 'msg': '必填项不能为空！'}), 400
 
     if User.query.filter_by(student_id=student_id).first():
         return jsonify({'code': 400, 'msg': '该学号已被注册！'}), 400
@@ -64,9 +54,9 @@ def register():
         student_id=student_id,
         name=name,
         department=dept,
-        major=major,
-        class_name=class_name,
-        entry_year=year,
+        major=data.get('major'),
+        class_name=data.get('class_name'),
+        entry_year=data.get('entry_year'),
         role='student',
         is_approved=False
     )
@@ -75,16 +65,21 @@ def register():
     try:
         db.session.add(new_user)
         db.session.commit()
-        # 修改提示语：告知用户即使未审核也可以登录
-        return jsonify({'code': 200, 'msg': '申请已提交！审核期间您仍可登录系统浏览，但无法进行投票。'})
+        return jsonify({'code': 200, 'msg': '申请已提交！审核期间可登录浏览，但无法投票。'})
     except Exception as e:
         db.session.rollback()
         return jsonify({'code': 500, 'msg': f'服务器错误: {str(e)}'}), 500
 
 
-@auth_bp.route('/login', methods=['POST'])
+# --- 登录路由：彻底修复 Session 写入问题 ---
+@auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
-    """增强版登录：集成 RSA 解密与终端调试输出"""
+    if request.method == 'GET':
+        # 如果已经登录了还访问登录页，直接跳到首页
+        if 'user_id' in session:
+            return redirect(url_for('main.index'))
+        return render_template('login.html')
+
     data = request.get_json()
     student_id = data.get('student_id')
     encrypted_password = data.get('password')
@@ -92,52 +87,43 @@ def login():
     if not student_id or not encrypted_password:
         return jsonify({'code': 400, 'msg': '学号和密码不能为空'}), 400
 
-    # --- 调试打印 1：前端发送的加密原始数据 ---
-    print("\n" + "=" * 50)
-    print(f"【DEBUG】前端请求学号: {student_id}")
-    print(f"【DEBUG】收到前端 RSA 加密串: \n{encrypted_password}")
-    print("=" * 50)
-
-    # --- 核心：RSA 解密逻辑 ---
+    # RSA 解密
     try:
         private_key_str = current_app.config.get('RSA_PRIVATE_KEY')
         if not private_key_str:
-            print("【ERROR】后端配置中未找到 RSA_PRIVATE_KEY")
             return jsonify({'code': 500, 'msg': '后端安全配置缺失'}), 500
 
         key = RSA.importKey(private_key_str)
         cipher = PKCS1_v1_5.new(key)
-
-        # 执行解密
         decrypted_password = cipher.decrypt(base64.b64decode(encrypted_password), "ERROR")
 
         if decrypted_password == "ERROR":
-            print("【DEBUG】！！！解密失败：密文无法被私钥解析")
-            return jsonify({'code': 400, 'msg': '解密失败，请检查加密链路'}), 400
+            return jsonify({'code': 400, 'msg': '安全校验失败，请刷新页面重试'}), 400
 
-        # 解密成功后的明文
         password_plain = decrypted_password.decode('utf-8')
-
-        # --- 调试打印 2：后端解密出的结果 ---
-        print(f"【DEBUG】后端解密成功！还原后的明文密码为: {password_plain}")
-        print("=" * 50 + "\n")
-
     except Exception as e:
-        print(f"【ERROR】解密过程发生异常: {str(e)}")
-        return jsonify({'code': 400, 'msg': f'安全校验失败: {str(e)}'}), 400
+        current_app.logger.error(f"解密异常: {str(e)}")
+        return jsonify({'code': 400, 'msg': '安全解密失败'}), 400
 
-    # --- 后续：常规登录校验 ---
+    # 数据库校验
     user = User.query.filter_by(student_id=student_id).first()
 
     if user and user.check_password(password_plain):
-        # 写入 Session
-        session['user_id'] = user.id
-        session['student_id'] = user.student_id
-        session['role'] = user.role
-        session['name'] = user.name
-        session['is_approved'] = user.is_approved
-        session['department'] = user.department
-        session['major'] = user.major
+        # 1. 登录前清理旧 Session
+        session.clear()
+
+        # 2. 写入 Session，强制转换类型以防拦截器查询失败
+        # 特别是 user.id，确保存入的是整型
+        session['user_id'] = int(user.id)
+        session['role'] = str(user.role)
+        session['name'] = str(user.name)
+        session['is_approved'] = bool(user.is_approved)
+
+        # 3. 显式设置持久化（根据 Config 中的 PERMANENT_SESSION_LIFETIME）
+        session.permanent = True
+
+        # 终端调试打印，方便你观察
+        print(f"【DEBUG】用户 {user.name} 登录成功，Session ID: {session['user_id']} 已保存")
 
         return jsonify({
             'code': 200,
@@ -145,15 +131,16 @@ def login():
             'data': {
                 'name': user.name,
                 'role': user.role,
-                'is_approved': user.is_approved,
-                'department': user.department
+                'is_approved': user.is_approved
             }
         })
 
     return jsonify({'code': 401, 'msg': '账号或密码错误'}), 401
 
 
-@auth_bp.route('/logout', methods=['POST'])
+@auth_bp.route('/logout', methods=['GET', 'POST'])
 def logout():
     session.clear()
+    if request.method == 'GET':
+        return redirect(url_for('auth.login'))
     return jsonify({'code': 200, 'msg': '已退出'})
