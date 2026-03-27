@@ -13,15 +13,17 @@ admin_bp = Blueprint('admin', __name__, url_prefix='/api/admin')
 # --- 管理员权限拦截器 ---
 def admin_required(view):
     """验证用户是否具有管理员角色"""
+
     @functools.wraps(view)
     def wrapped_view(*args, **kwargs):
         if session.get('role') != 'admin':
             return jsonify({'code': 403, 'msg': '权限不足：仅限管理员操作'}), 403
         return view(*args, **kwargs)
+
     return wrapped_view
 
 
-# ================= 1. 用户资质审核 =================
+# ================= 1. 用户资质审核与管理 =================
 
 @admin_bp.route('/users/pending', methods=['GET'])
 @login_required
@@ -64,6 +66,26 @@ def approve_user():
         return jsonify({'code': 200, 'msg': '已驳回该申请，相关记录已清除'})
 
 
+# ==========================================
+# [新增] 黑名单封禁接口
+# ==========================================
+@admin_bp.route('/users/ban/<int:user_id>', methods=['POST'])
+@login_required
+@admin_required
+def toggle_ban_user(user_id):
+    """将违规用户关入或移出小黑屋"""
+    user = User.query.get_or_404(user_id)
+    if user.role == 'admin':
+        return jsonify({'code': 400, 'msg': '系统限制：不能封禁管理员账号'}), 400
+
+    # 状态翻转：True 变 False，False 变 True
+    user.is_banned = not user.is_banned
+    db.session.commit()
+
+    action_msg = "封禁" if user.is_banned else "解封"
+    return jsonify({'code': 200, 'msg': f'已成功{action_msg}用户：{user.name}'})
+
+
 # ================= 2. 投票项目管理（提议流与全列表） =================
 
 @admin_bp.route('/elections/pending', methods=['GET'])
@@ -71,13 +93,20 @@ def approve_user():
 @admin_required
 def get_pending_elections():
     """获取待审批（review_status='pending'）的投票提议"""
-    elections = Election.query.filter_by(review_status='pending').all()
+
+    # [优化] 修复 N+1 查询：使用 outerjoin 联表查询，一次性带出提案人的名字
+    # 避免在列表推导式中循环执行 User.query.get() 导致数据库连接池耗尽
+    query_result = db.session.query(Election, User.name).outerjoin(
+        User, Election.proposer_id == User.id
+    ).filter(Election.review_status == 'pending').all()
+
     data = [{
         'id': e.id,
         'title': e.title,
         'description': e.description,
-        'proposer_name': User.query.get(e.proposer_id).name if e.proposer_id else "系统"
-    } for e in elections]
+        'proposer_name': proposer_name if proposer_name else "系统"
+    } for e, proposer_name in query_result]
+
     return jsonify({'code': 200, 'data': data})
 
 
@@ -86,12 +115,11 @@ def get_pending_elections():
 @admin_required
 def get_all_elections():
     """获取所有已通过审核的项目，用于前端‘数据审计’列表展示"""
-    # 只要是审核通过（approved）的项目，管理员就可以导出报表 [cite: 2026-03-04]
     elections = Election.query.filter_by(review_status='approved').all()
     data = [{
         'id': e.id,
         'title': e.title,
-        'status': e.status, # active, draft, ended 等
+        'status': e.status,  # active, draft, ended 等
         'end_time': e.end_time.strftime('%Y-%m-%d %H:%M') if e.end_time else '长期有效'
     } for e in elections]
     return jsonify({'code': 200, 'data': data})
@@ -113,8 +141,7 @@ def review_election():
 
     if action == 'approve':
         election.review_status = 'approved'
-        election.status = 'active'
-        # 若提议时未填时间，默认审批通过即刻开启
+        election.status = 'published'  # 审核通过后，状态变更为进行中
         if not election.start_time:
             election.start_time = datetime.utcnow()
     else:
@@ -125,13 +152,68 @@ def review_election():
     return jsonify({'code': 200, 'msg': '审核操作成功'})
 
 
+# ==========================================
+# [新增] 发起/编辑投票接口 (支持草稿保存与修改选票开关)
+# ==========================================
+@admin_bp.route('/elections/save', methods=['POST'])
+@login_required
+@admin_required
+def save_election():
+    """
+    管理员新建或继续编辑投票项目
+    前端传入 status 来区分：'draft'(保存草稿) 或 'published'(立即发布)
+    """
+    data = request.get_json()
+    eid = data.get('election_id')  # 如果传了ID，说明是在编辑草稿
+
+    title = data.get('title')
+    description = data.get('description', '')
+    status = data.get('status', 'draft')  # 核心：状态控制
+    allow_update = data.get('allow_update_vote', False)  # 核心：后悔药开关
+    is_multi_choice = data.get('is_multi_choice', False)
+
+    if not title:
+        return jsonify({'code': 400, 'msg': '项目标题不能为空'}), 400
+
+    if eid:
+        # 场景 A：继续编辑草稿
+        election = Election.query.get_or_404(eid)
+        election.title = title
+        election.description = description
+        election.status = status
+        election.allow_update_vote = allow_update
+        election.is_multi_choice = is_multi_choice
+        msg = '草稿已更新' if status == 'draft' else '项目已正式发布'
+
+        if status == 'published' and not election.start_time:
+            election.start_time = datetime.utcnow()
+    else:
+        # 场景 B：全新创建
+        election = Election(
+            title=title,
+            description=description,
+            status=status,
+            allow_update_vote=allow_update,
+            is_multi_choice=is_multi_choice,
+            review_status='approved',  # 管理员发起的免审
+            is_official=True
+        )
+        if status == 'published':
+            election.start_time = datetime.utcnow()
+        db.session.add(election)
+        msg = '草稿保存成功' if status == 'draft' else '项目创建并发布成功'
+
+    db.session.commit()
+    return jsonify({'code': 200, 'msg': msg, 'election_id': election.id})
+
+
 # ================= 3. 数据导出与安全审计 =================
 
 @admin_bp.route('/export/<int:election_id>', methods=['GET'])
 @login_required
 @admin_required
 def export_election_data(election_id):
-    """一键导出带哈希凭证的 CSV 报表，解决 Excel 中文乱码问题 [cite: 2026-03-05]"""
+    """一键导出带哈希凭证的 CSV 报表，解决 Excel 中文乱码问题"""
     election = Election.query.get_or_404(election_id)
 
     # 联表查询：投票记录 + 用户 + 候选人
@@ -143,7 +225,6 @@ def export_election_data(election_id):
 
     # 构建内存 CSV 流
     output = io.StringIO()
-    # 写入 UTF-8 BOM 头部，确保 Excel 打开不乱码 [cite: 2026-03-05]
     output.write(u'\ufeff')
     writer = csv.writer(output)
 
@@ -158,7 +239,7 @@ def export_election_data(election_id):
             u.department,
             c.name,
             r.vote_time.strftime('%Y-%m-%d %H:%M:%S'),
-            r.vote_hash  # 关键导出项：用于答辩展示数据的不可篡改性 [cite: 2026-03-04]
+            r.vote_hash
         ])
 
     file_name = f"Audit_Report_{election_id}_{datetime.now().strftime('%Y%m%d')}.csv"

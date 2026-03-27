@@ -1,7 +1,7 @@
 import os
 import json
 import functools
-import uuid  # 新增：用于生成防冲突的唯一文件名
+import uuid
 from datetime import datetime
 from werkzeug.utils import secure_filename
 from flask import Blueprint, request, jsonify, session, current_app
@@ -21,9 +21,7 @@ vote_bp = Blueprint('vote', __name__, url_prefix='/api/vote')
 # ================= 0. 安全辅助功能：Redis 限流装饰器 =================
 
 def rate_limit(limit=1, period=60, key_prefix='rate_limit'):
-    """
-    高并发防刷限流装饰器
-    """
+    """高并发防刷限流装饰器"""
 
     def decorator(f):
         @functools.wraps(f)
@@ -54,16 +52,13 @@ def rate_limit(limit=1, period=60, key_prefix='rate_limit'):
 def save_upload_file(file):
     """辅助函数：保存上传的图片文件并返回相对路径URL"""
     if file and file.filename:
-        # 修复 Bug 2: 使用 current_app.root_path，确保一定保存在 app/static/uploads 下
         upload_folder = os.path.join(current_app.root_path, 'static', 'uploads')
         os.makedirs(upload_folder, exist_ok=True)
 
-        # 修复 Bug 1: 手动提取文件后缀，防止纯中文名被 secure_filename 过滤成空
-        ext = os.path.splitext(file.filename)[1]  # 提取后缀，例如 .png 或 .jpg
-        if not ext:  # 防御性处理，如果没有后缀就给个默认的
+        ext = os.path.splitext(file.filename)[1]
+        if not ext:
             ext = '.png'
 
-        # 拼接新的安全文件名：当前时间 + uuid前8位防止极小概率并发冲突 + 原始后缀
         unique_filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}{ext}"
         file_path = os.path.join(upload_folder, unique_filename)
 
@@ -79,7 +74,7 @@ def save_upload_file(file):
 @approval_required
 @rate_limit(limit=1, period=60, key_prefix='propose')
 def submit_proposal():
-    """学生提交投票项目提议（支持主海报、起止时间、选项图片及多选配置）"""
+    """学生提交投票项目提议"""
     title = request.form.get('title')
     description = request.form.get('description')
     start_time_str = request.form.get('start_time')
@@ -192,14 +187,15 @@ def apply_candidate():
         return jsonify({'code': 500, 'msg': '系统繁忙'}), 500
 
 
-# ================= 2. 安全投票机制 (支持多选) =================
-
+# ==========================================
+# [修改] 核心投票机制 (集成"后悔药"选票修改功能)
+# ==========================================
 @vote_bp.route('/do_vote', methods=['POST'])
 @login_required
 @approval_required
-@rate_limit(limit=1, period=60, key_prefix='vote')
+@rate_limit(limit=1, period=3, key_prefix='vote')  # 稍微放宽投票接口限流，防误伤
 def do_vote():
-    """执行投票：支持单选与多选，生成多条哈希凭证"""
+    """执行投票：支持单选与多选，支持选票修改"""
     data = request.get_json()
     election_id = data.get('election_id')
     candidate_ids = data.get('candidate_ids', [])
@@ -217,14 +213,27 @@ def do_vote():
         return jsonify({'code': 400, 'msg': '投票尚未开始'}), 400
     if election.end_time and now > election.end_time:
         return jsonify({'code': 400, 'msg': '投票已经结束'}), 400
-    if election.status != 'active':
+
+    # 兼容之前遗留的 active 状态和新加入的 published 状态
+    if election.status not in ['active', 'published']:
         return jsonify({'code': 400, 'msg': '投票未开启'}), 400
 
     if not election.is_multi_choice and len(candidate_ids) > 1:
         return jsonify({'code': 400, 'msg': '该投票项目仅支持单选'}), 400
 
-    if VoteRecord.query.filter_by(user_id=user_id, election_id=election_id).first():
-        return jsonify({'code': 403, 'msg': '您已参与过本次投票，请勿重复操作'}), 403
+    # === 核心修改区：后悔药逻辑 ===
+    existing_records = VoteRecord.query.filter_by(user_id=user_id, election_id=election_id).all()
+
+    action_msg = '投票成功！'
+    if existing_records:
+        if getattr(election, 'allow_update_vote', False):
+            # 允许修改选票：物理删除旧记录（系统通过count统计得票，删除记录等于自动退票）
+            for r in existing_records:
+                db.session.delete(r)
+            db.session.flush()  # 刷新 session 状态，确保下方插入时不冲突
+            action_msg = '选票修改成功！旧记录已作废。'
+        else:
+            return jsonify({'code': 403, 'msg': '您已参与过本次投票，且该项目不允许修改选票'}), 403
 
     try:
         tokens = []
@@ -239,12 +248,12 @@ def do_vote():
                 candidate_id=cid,
                 ip_address=request.remote_addr
             )
-            new_vote.generate_hash()
+            new_vote.generate_hash()  # 生成全新的安全凭证
             db.session.add(new_vote)
             tokens.append(new_vote.vote_hash)
 
         db.session.commit()
-        return jsonify({'code': 200, 'msg': '投票成功！', 'tokens': tokens})
+        return jsonify({'code': 200, 'msg': action_msg, 'tokens': tokens})
     except Exception as e:
         db.session.rollback()
         return jsonify({'code': 500, 'msg': f'系统繁忙: {str(e)}'}), 500
@@ -305,19 +314,30 @@ def get_personal_records():
     })
 
 
-# ================= 4. 增强统计接口 (集成机器学习分析) =================
-
+# ==========================================
+# [优化] 增强统计接口 (加入 Redis 缓存，防止 AI 模型压垮服务器)
+# ==========================================
 @vote_bp.route('/statistics/<int:election_id>', methods=['GET'])
 @login_required
 def get_statistics(election_id):
-    """
-    提供统计数据接口：集成 ECharts 可视化与 AI 安全审计
-    """
+    """提供统计数据接口：集成 ECharts 可视化与 AI 安全审计"""
+
+    # 1. 尝试从 Redis 读取缓存 (缓存有效时间 60 秒)
+    cache_key = f"stats:election:{election_id}"
+    if redis_client:
+        cached_data = redis_client.get(cache_key)
+        if cached_data:
+            return jsonify({
+                'code': 200,
+                'msg': '获取统计数据成功(Cache)',
+                'data': json.loads(cached_data)
+            })
+
     election = Election.query.get(election_id)
     if not election:
         return jsonify({'code': 404, 'msg': '选举项目不存在'}), 404
 
-    # 1. 基础票数统计
+    # 2. 基础票数统计
     all_records = VoteRecord.query.filter_by(election_id=election_id).order_by(VoteRecord.vote_time).all()
     total_votes = len(all_records)
 
@@ -325,7 +345,7 @@ def get_statistics(election_id):
     c_names = [c.name for c in candidates]
     c_votes = [VoteRecord.query.filter_by(candidate_id=c.id).count() for c in candidates]
 
-    # 2. 投票热度趋势 (按小时聚合)
+    # 3. 投票热度趋势 (按小时聚合)
     time_series = {}
     for r in all_records:
         hour_key = r.vote_time.strftime('%m-%d %H:00')
@@ -334,12 +354,11 @@ def get_statistics(election_id):
     trend_labels = sorted(time_series.keys())
     trend_values = [time_series[k] for k in trend_labels]
 
-    # 3. 机器学习安全审计 (Isolation Forest)
+    # 4. 机器学习安全审计 (Isolation Forest)
     risk_report = {"level": "低", "suspicious_count": 0, "score": 100}
 
-    if total_votes > 10:  # 样本量足够时运行 AI 模型
+    if total_votes > 10:
         try:
-            # 提取特征矩阵: [小时, 分钟, 与上一条的时间差, 该IP累计频率]
             features = []
             ip_counts = {}
             for i, r in enumerate(all_records):
@@ -348,7 +367,6 @@ def get_statistics(election_id):
                 features.append([r.vote_time.hour, r.vote_time.minute, delta, ip_counts[r.ip_address]])
 
             X = np.array(features)
-            # 污染率设为 5%，识别离群点
             clf = IsolationForest(contamination=0.05, random_state=42)
             preds = clf.fit_predict(X)
 
@@ -363,7 +381,7 @@ def get_statistics(election_id):
         except Exception as e:
             current_app.logger.error(f"AI Audit Error: {e}")
 
-    # 4. 院系画像分布
+    # 5. 院系画像分布
     dept_counts = db.session.query(
         User.department,
         func.count(VoteRecord.id)
@@ -371,16 +389,23 @@ def get_statistics(election_id):
         VoteRecord.election_id == election_id
     ).group_by(User.department).all()
 
+    # 构建返回数据
+    response_data = {
+        'title': election.title,
+        'total_votes': total_votes,
+        'candidates': c_names,
+        'votes': c_votes,
+        'trend': {'labels': trend_labels, 'values': trend_values},
+        'departments': [{"name": d if d else "未知", "value": c} for d, c in dept_counts],
+        'security': risk_report
+    }
+
+    # 6. 将计算结果写入 Redis 缓存
+    if redis_client:
+        redis_client.setex(cache_key, 60, json.dumps(response_data))
+
     return jsonify({
         'code': 200,
         'msg': '获取统计数据成功',
-        'data': {
-            'title': election.title,
-            'total_votes': total_votes,
-            'candidates': c_names,
-            'votes': c_votes,
-            'trend': {'labels': trend_labels, 'values': trend_values},
-            'departments': [{"name": d if d else "未知", "value": c} for d, c in dept_counts],
-            'security': risk_report
-        }
+        'data': response_data
     })

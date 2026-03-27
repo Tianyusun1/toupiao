@@ -21,6 +21,9 @@
                 <button class="nav-link text-start shadow-sm" id="stats-tab" data-bs-toggle="pill" data-bs-target="#tab-stats" onclick="loadAllElections()">
                     <i class="fa-solid fa-file-shield me-2"></i> 数据审计与导出
                 </button>
+                <button class="btn btn-primary w-100 text-start shadow-sm mt-4 rounded-pill" onclick="openCreateDraftModal()">
+                    <i class="fa-solid fa-plus-circle me-2"></i> 发起/编辑投票
+                </button>
             </div>
         </div>
     </div>
@@ -30,7 +33,12 @@
 
             <div class="tab-pane fade show active" id="tab-users">
                 <div class="glass-card p-4 shadow">
-                    <h4 class="fw-bold mb-4">待审核学生名单</h4>
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <h4 class="fw-bold mb-0">待审核学生名单</h4>
+                        <button class="btn btn-sm btn-danger rounded-pill shadow-sm" onclick="banUserPrompt()">
+                            <i class="fa-solid fa-ban"></i> 封禁/解封违规账号
+                        </button>
+                    </div>
                     <div class="table-responsive">
                         <table class="table table-hover align-middle">
                             <thead class="table-light">
@@ -88,6 +96,40 @@
                 </div>
             </div>
 
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="createDraftModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content glass-card border-0 shadow-lg">
+            <div class="modal-header border-0">
+                <h5 class="modal-title fw-bold"><i class="fa-solid fa-pen-nib text-primary"></i> 发起投票项目</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="draft-id">
+                <div class="mb-3">
+                    <label class="form-label text-muted small">项目标题</label>
+                    <input type="text" class="form-control" id="draft-title" placeholder="请输入标题">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label text-muted small">项目描述</label>
+                    <textarea class="form-control" id="draft-desc" rows="3"></textarea>
+                </div>
+                <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" id="draft-multi">
+                    <label class="form-check-label text-dark">开启多选模式</label>
+                </div>
+                <div class="form-check form-switch mb-3">
+                    <input class="form-check-input" type="checkbox" id="draft-allow-update">
+                    <label class="form-check-label text-success fw-bold">允许修改选票（后悔药开关）</label>
+                </div>
+            </div>
+            <div class="modal-footer border-0 d-flex justify-content-between">
+                <button type="button" class="btn btn-outline-info rounded-pill px-4" onclick="saveElection('draft')">保存为草稿</button>
+                <button type="button" class="btn btn-primary rounded-pill px-4" onclick="saveElection('published')">立即发布</button>
+            </div>
         </div>
     </div>
 </div>
@@ -185,7 +227,7 @@
         });
     }
 
-    // --- 3. 数据审计与评分加载 (核心完善点) ---
+    // --- 3. 数据审计与评分加载 ---
     function loadAllElections() {
         const body = document.getElementById('all-elections-body');
         body.innerHTML = '<tr><td colspan="5" class="text-center py-4">正在检索全量项目...</td></tr>';
@@ -194,7 +236,6 @@
             .then(res => res.json())
             .then(data => {
                 body.innerHTML = data.data.map(e => {
-                    // 默认显示加载占位符，稍后异步获取分数
                     return `
                     <tr id="row-${e.id}">
                         <td><span class="text-muted small">#${e.id}</span></td>
@@ -219,7 +260,6 @@
                     `;
                 }).join('');
 
-                // 异步逐个加载每个项目的安全评分
                 data.data.forEach(e => fetchScore(e.id));
 
                 if(data.data.length === 0) body.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-5">暂无已审核项目</td></tr>';
@@ -248,11 +288,73 @@
 
     function getStatusClass(status) {
         switch(status) {
-            case 'active': return 'bg-success';
+            case 'active': case 'published': return 'bg-success';
             case 'ended': return 'bg-secondary';
             case 'draft': return 'bg-info';
             default: return 'bg-dark';
         }
+    }
+
+    // --- 新增：黑名单管理 ---
+    function banUserPrompt() {
+        Swal.fire({
+            title: '小黑屋管理',
+            input: 'number',
+            inputLabel: '请输入要封禁/解封的用户 ID (可在上方列表查看)',
+            inputPlaceholder: '例如: 1',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            confirmButtonText: '执行封禁/解封',
+            cancelButtonText: '取消'
+        }).then((result) => {
+            if (result.isConfirmed && result.value) {
+                fetch(`/api/admin/users/ban/${result.value}`, { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    Swal.fire('操作结果', data.msg, data.code === 200 ? 'success' : 'error');
+                });
+            }
+        });
+    }
+
+    // --- 新增：草稿与发布管理 ---
+    function openCreateDraftModal(id='', title='', desc='', isMulti=false, allowUpdate=false) {
+        document.getElementById('draft-id').value = id;
+        document.getElementById('draft-title').value = title;
+        document.getElementById('draft-desc').value = desc;
+        document.getElementById('draft-multi').checked = isMulti;
+        document.getElementById('draft-allow-update').checked = allowUpdate;
+
+        const draftModal = new bootstrap.Modal(document.getElementById('createDraftModal'));
+        draftModal.show();
+    }
+
+    function saveElection(status) {
+        const data = {
+            election_id: document.getElementById('draft-id').value || null,
+            title: document.getElementById('draft-title').value,
+            description: document.getElementById('draft-desc').value,
+            is_multi_choice: document.getElementById('draft-multi').checked,
+            allow_update_vote: document.getElementById('draft-allow-update').checked,
+            status: status
+        };
+
+        fetch('/api/admin/elections/save', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        }).then(res => res.json()).then(resData => {
+            if(resData.code === 200) {
+                Swal.fire('成功', resData.msg, 'success').then(() => {
+                    const modalEl = document.getElementById('createDraftModal');
+                    const modalInstance = bootstrap.Modal.getInstance(modalEl);
+                    modalInstance.hide();
+                    loadAllElections(); // 刷新列表
+                });
+            } else {
+                Swal.fire('失败', resData.msg, 'error');
+            }
+        });
     }
 </script>
 

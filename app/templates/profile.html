@@ -145,14 +145,20 @@
                     `).join('');
                 }
 
-                // 渲染提议进度 (重点优化：增加反馈显示)
+                // 渲染提议进度 (重点优化：增加草稿箱状态支持)
                 const propList = document.getElementById('proposal-list');
                 if(data.proposals.length === 0) {
                     propList.innerHTML = '<div class="col-12 text-center py-3 text-muted">您尚未发起过投票提议</div>';
                 } else {
                     propList.innerHTML = data.proposals.map(p => {
-                        let statusColor = p.status === 'approved' ? 'success' : (p.status === 'rejected' ? 'danger' : 'warning');
-                        let statusText = p.status === 'approved' ? '已通过' : (p.status === 'rejected' ? '已驳回' : '审核中');
+                        // 修改：支持识别 published, approved, rejected, draft, 以及 pending(默认)
+                        let statusColor = p.status === 'published' || p.status === 'approved' ? 'success' :
+                                          (p.status === 'rejected' ? 'danger' :
+                                          (p.status === 'draft' ? 'secondary' : 'warning'));
+
+                        let statusText = p.status === 'published' || p.status === 'approved' ? '已发布' :
+                                         (p.status === 'rejected' ? '已驳回' :
+                                         (p.status === 'draft' ? '草稿箱' : '审核中'));
 
                         // 驳回理由 UI 增强
                         let feedbackHtml = '';

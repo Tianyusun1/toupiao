@@ -84,6 +84,7 @@ iIcGyxA+qaoBgWIGcwIDAQAB
         // 3. 发送加密后的密码到后端
         fetch('/auth/login', {
             method: 'POST',
+            credentials: 'include', // ✨ 核心修复点：允许跨域或本地携带 Cookie（保存 Session）
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 student_id: studentId,

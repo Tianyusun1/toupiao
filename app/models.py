@@ -27,6 +27,11 @@ class User(db.Model):
     avatar = db.Column(db.String(100), default='default.png')  # 头像路径
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    # ==========================================
+    # [新增] 黑名单功能：为 True 时，该用户被关小黑屋
+    # ==========================================
+    is_banned = db.Column(db.Boolean, default=False)
+
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
 
@@ -45,7 +50,7 @@ class Election(db.Model):
     image_url = db.Column(db.String(255), nullable=True)
 
     # --- 多选配置 ---
-    is_multi_choice = db.Column(db.Boolean, default=False)  # 新增：是否支持多选
+    is_multi_choice = db.Column(db.Boolean, default=False)  # 是否支持多选
 
     # --- UGC 提议逻辑 ---
     proposer_id = db.Column(db.Integer, db.ForeignKey('users.id'))
@@ -54,8 +59,15 @@ class Election(db.Model):
 
     start_time = db.Column(db.DateTime)
     end_time = db.Column(db.DateTime)
-    status = db.Column(db.String(20), default='draft')  # draft, active, ended
+
+    # 状态：draft(草稿), published(已发布), ended(已结束)
+    status = db.Column(db.String(20), default='draft')
     is_official = db.Column(db.Boolean, default=False)
+
+    # ==========================================
+    # [新增] 选票修改开关：为 True 时，允许在投票期内修改（后悔药）
+    # ==========================================
+    allow_update_vote = db.Column(db.Boolean, default=False)
 
 
 class Candidate(db.Model):
@@ -88,14 +100,13 @@ class VoteRecord(db.Model):
     # --- 投票安全凭证 (SHA-256) ---
     vote_hash = db.Column(db.String(64), unique=True)
 
-    # 注意：为了支持多选（一个用户对同一个项目产生多条针对不同候选人的记录），
-    # 我们移除了原有的 UniqueConstraint('user_id', 'election_id') 物理约束。
-    # 逻辑层面的“一人只能投一次”将在接口中通过代码控制。
-
     def generate_hash(self):
         """
         生成唯一的投票凭证。
         增加 candidate_id 参与计算，确保多选时每条记录产生不同的哈希指纹。
         """
+        # [优化] 将时间精度强制截断到秒，避免存入数据库或导出报表时微秒丢失，导致后期重新计算哈希对不上
+        self.vote_time = self.vote_time.replace(microsecond=0)
+
         raw_str = f"{self.user_id}-{self.election_id}-{self.candidate_id}-{self.vote_time}"
         self.vote_hash = hashlib.sha256(raw_str.encode()).hexdigest()

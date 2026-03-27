@@ -25,11 +25,20 @@
     <strong>投票已截止！</strong> 本次投票已结束，当前显示为最终票数排名。
 </div>
 {% elif has_voted %}
-<div class="alert alert-success shadow-sm mb-4 border-0 animate__animated animate__pulse">
-    <i class="fa-solid fa-circle-check me-2 fs-5 align-middle"></i>
-    <strong>您已参与过本次投票！</strong> 感谢您的支持，当前显示为实时得票排名。
-</div>
+    {% if election.allow_update_vote and not is_expired %}
+    <div class="alert alert-warning shadow-sm mb-4 border-0 animate__animated animate__pulse">
+        <i class="fa-solid fa-pen-to-square me-2 fs-5 align-middle"></i>
+        <strong>您已投票，但本项目支持修改！</strong> 在截止时间前，您可以随时重新选择，新选票将覆盖旧记录。
+    </div>
+    {% else %}
+    <div class="alert alert-success shadow-sm mb-4 border-0 animate__animated animate__pulse">
+        <i class="fa-solid fa-circle-check me-2 fs-5 align-middle"></i>
+        <strong>您已参与过本次投票！</strong> 感谢您的支持，当前显示为实时得票排名。
+    </div>
+    {% endif %}
 {% endif %}
+
+{% set can_interact = can_vote or (has_voted and election.allow_update_vote and not is_expired) %}
 
 <div class="glass-card p-4 mb-5 animate__animated animate__fadeInDown">
     <div class="row align-items-center">
@@ -72,12 +81,12 @@
     </a>
 </div>
 
-<div class="row g-4 {% if election.is_multi_choice and can_vote %}mb-5 pb-5{% endif %}">
+<div class="row g-4 {% if election.is_multi_choice and can_interact %}mb-5 pb-5{% endif %}">
     {% if candidates %}
         {% for candidate in candidates %}
         <div class="col-md-6 col-lg-3 animate__animated animate__fadeInUp" style="animation-delay: {{ loop.index0 * 0.1 }}s;">
-            <div class="glass-card p-4 text-center h-100 d-flex flex-column transition-hover position-relative {% if is_expired %}opacity-85{% endif %} {% if election.is_multi_choice and can_vote %}multi-vote-card{% endif %}"
-                 {% if election.is_multi_choice and can_vote %}style="cursor: pointer;" onclick="toggleCandidate('{{ candidate.id }}', this)"{% endif %}>
+            <div class="glass-card p-4 text-center h-100 d-flex flex-column transition-hover position-relative {% if is_expired %}opacity-85{% endif %} {% if election.is_multi_choice and can_interact %}multi-vote-card{% endif %}"
+                 {% if election.is_multi_choice and can_interact %}style="cursor: pointer;" onclick="toggleCandidate('{{ candidate.id }}', this)"{% endif %}>
 
                 <div class="position-absolute top-0 start-0 m-3">
                     {% if loop.index == 1 %}
@@ -91,7 +100,7 @@
                     {% endif %}
                 </div>
 
-                {% if election.is_multi_choice and can_vote %}
+                {% if election.is_multi_choice and can_interact %}
                 <div class="position-absolute top-0 end-0 m-3">
                     <input class="form-check-input candidate-checkbox" type="checkbox" value="{{ candidate.id }}"
                            data-cid="{{ candidate.id }}"
@@ -120,11 +129,11 @@
                 </p>
 
                 {% if not election.is_multi_choice %}
-                    {% if can_vote %}
+                    {% if can_interact %}
                         <button class="btn btn-custom w-100 mt-3 single-vote-btn"
                                 data-cid="{{ candidate.id }}"
                                 onclick="doSingleVote('{{ candidate.id }}', '{{ candidate.name }}')">
-                            <i class="fa-solid fa-check-to-slot me-1"></i> 投TA一票
+                            <i class="fa-solid fa-check-to-slot me-1"></i> {% if has_voted %}修改选票{% else %}投TA一票{% endif %}
                         </button>
                     {% else %}
                         <button class="btn btn-secondary w-100 mt-3" disabled style="opacity: 0.6;">
@@ -153,7 +162,7 @@
     {% endif %}
 </div>
 
-{% if election.is_multi_choice and can_vote %}
+{% if election.is_multi_choice and can_interact %}
 <div class="fixed-bottom p-3 animate__animated animate__slideInUp" style="z-index: 1030;">
     <div class="container">
         <div class="glass-card bg-white border shadow-lg p-3 d-flex justify-content-between align-items-center">
@@ -174,15 +183,21 @@
 {% block scripts %}
 <script>
     const ELECTION_ID = "{{ election.id }}";
+    // 新增：向 JS 传递当前用户是否已经投过票的标记
+    const HAS_VOTED = {{ 'true' if has_voted else 'false' }};
 
     function doSingleVote(cid, name) {
         Swal.fire({
             title: '确认投票',
-            html: `您确定要投给 <b>${name}</b> 吗？<br><small class='text-danger'>投票后不可更改！</small>`,
+            // 修改：根据是否投过票，动态生成不同的警告文案
+            html: `您确定要投给 <b>${name}</b> 吗？<br>
+                   <small class='${HAS_VOTED ? "text-warning" : "text-danger"}'>
+                   ${HAS_VOTED ? "⚠️ 注意：提交后将作废您之前的选票并以本次为准！" : "投票后不可更改！"}
+                   </small>`,
             icon: 'question',
             showCancelButton: true,
             confirmButtonColor: '#4776E6',
-            confirmButtonText: '确认投票',
+            confirmButtonText: '确认提交',
             cancelButtonText: '取消',
             showLoaderOnConfirm: true,
             preConfirm: () => {
@@ -230,7 +245,8 @@
 
         Swal.fire({
             title: '确认提交',
-            text: `您当前选择了 ${selected.length} 项，确认提交吗？`,
+            // 修改：加入多选覆盖提示
+            text: `您当前选择了 ${selected.length} 项，确认提交吗？${HAS_VOTED ? '(提交后将覆盖您之前的选票)' : ''}`,
             icon: 'warning',
             showCancelButton: true,
             confirmButtonColor: '#4776E6',
@@ -250,7 +266,7 @@
             }
         }).then(result => {
             if (result.isConfirmed) {
-                Swal.fire('投票成功', '多选投票已记录', 'success').then(() => window.location.reload());
+                Swal.fire('操作成功', '多选投票已记录', 'success').then(() => window.location.reload());
             }
         });
     }
