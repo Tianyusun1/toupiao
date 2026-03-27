@@ -18,11 +18,13 @@
                 <button class="nav-link text-start mb-2 shadow-sm" id="elections-tab" data-bs-toggle="pill" data-bs-target="#tab-elections" onclick="loadPendingElections()">
                     <i class="fa-solid fa-clipboard-check me-2"></i> 提议审批 <span class="badge bg-warning ms-2" id="election-count">0</span>
                 </button>
-                <button class="nav-link text-start shadow-sm" id="stats-tab" data-bs-toggle="pill" data-bs-target="#tab-stats" onclick="loadAllElections()">
-                    <i class="fa-solid fa-file-shield me-2"></i> 数据审计与导出
+
+                <button class="nav-link text-start mb-2 shadow-sm" id="all-users-tab" data-bs-toggle="pill" data-bs-target="#tab-all-users" onclick="loadAllUsers()">
+                    <i class="fa-solid fa-users-slash me-2"></i> 用户大盘 & 小黑屋
                 </button>
-                <button class="btn btn-primary w-100 text-start shadow-sm mt-4 rounded-pill" onclick="openCreateDraftModal()">
-                    <i class="fa-solid fa-plus-circle me-2"></i> 发起/编辑投票
+
+                <button class="nav-link text-start shadow-sm" id="stats-tab" data-bs-toggle="pill" data-bs-target="#tab-stats" onclick="loadAllElections()">
+                    <i class="fa-solid fa-file-shield me-2"></i> 项目审计与选项管理
                 </button>
             </div>
         </div>
@@ -36,7 +38,7 @@
                     <div class="d-flex justify-content-between align-items-center mb-4">
                         <h4 class="fw-bold mb-0">待审核学生名单</h4>
                         <button class="btn btn-sm btn-danger rounded-pill shadow-sm" onclick="banUserPrompt()">
-                            <i class="fa-solid fa-ban"></i> 封禁/解封违规账号
+                            <i class="fa-solid fa-ban"></i> 快捷封禁账号
                         </button>
                     </div>
                     <div class="table-responsive">
@@ -57,6 +59,34 @@
                 </div>
             </div>
 
+            <div class="tab-pane fade" id="tab-all-users">
+                <div class="glass-card p-4 shadow">
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <h4 class="fw-bold mb-0">全量用户管理 (含小黑屋)</h4>
+                        <div class="input-group w-50">
+                            <span class="input-group-text bg-white border-end-0 rounded-start-pill"><i class="fa-solid fa-magnifying-glass text-muted"></i></span>
+                            <input type="text" id="user-search" class="form-control border-start-0 rounded-end-pill shadow-none" placeholder="搜索学号或姓名..." onkeyup="filterUsers()">
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>学号</th>
+                                    <th>姓名</th>
+                                    <th>院系专业</th>
+                                    <th>状态</th>
+                                    <th class="text-center">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="all-users-body">
+                                <tr><td colspan="5" class="text-center py-4 text-muted">正在加载数据...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
             <div class="tab-pane fade" id="tab-elections">
                 <div class="glass-card p-4 shadow">
                     <h4 class="fw-bold mb-4">待审批投票项目</h4>
@@ -69,23 +99,23 @@
             <div class="tab-pane fade" id="tab-stats">
                 <div class="glass-card p-4 shadow">
                     <div class="d-flex justify-content-between align-items-center mb-2">
-                        <h4 class="fw-bold mb-0">安全审计与报表导出</h4>
+                        <h4 class="fw-bold mb-0">项目管理与审计报表</h4>
                         <button class="btn btn-sm btn-outline-primary rounded-pill" onclick="loadAllElections()">
                             <i class="fa-solid fa-rotate me-1"></i> 刷新列表
                         </button>
                     </div>
                     <p class="text-muted small mb-4">
-                        您可以监控各项目的 **AI 安全评分**。系统会自动通过孤立森林算法识别潜在的刷票风险。
+                        在这里您可以管理各个项目的<strong class="text-success">候选人选项</strong>、进行安全审计监控或导出流水报表。
                     </p>
 
                     <div class="table-responsive">
                         <table class="table table-hover align-middle">
                             <thead class="table-light">
                                 <tr>
-                                    <th>项目编号</th>
-                                    <th>标题</th>
-                                    <th>当前状态</th>
-                                    <th>AI 审计评分</th> <th class="text-center">操作</th>
+                                    <th>编号</th>
+                                    <th>项目标题</th>
+                                    <th>状态</th>
+                                    <th>安全风控</th> <th class="text-center">超级操作台</th>
                                 </tr>
                             </thead>
                             <tbody id="all-elections-body">
@@ -100,35 +130,111 @@
     </div>
 </div>
 
+<div class="modal fade" id="manageCandidatesModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content glass-card border-0 shadow-lg animate__animated animate__fadeInDown" style="animation-duration: 0.3s;">
+            <div class="modal-header border-0 pb-0 mt-2 mx-2">
+                <h5 class="modal-title fw-bolder text-success"><i class="fa-solid fa-users-viewfinder me-2"></i>管理选项：<span id="mc-election-title" class="text-dark fw-bold"></span></h5>
+                <button type="button" class="btn-close shadow-none" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div class="modal-body px-4 py-3">
+                <input type="hidden" id="mc-election-id">
+
+                <div class="glass-card p-3 bg-light border-0 mb-4 rounded-3 shadow-sm">
+                    <h6 class="fw-bold mb-3"><i class="fa-solid fa-plus-circle text-primary me-1"></i> 快速添加候选人/选项</h6>
+                    <div class="row g-2">
+                        <div class="col-md-4">
+                            <input type="text" class="form-control shadow-sm" id="mc-new-name" placeholder="名称 (如: 张三 / 方案A)">
+                        </div>
+                        <div class="col-md-6">
+                            <input type="text" class="form-control shadow-sm" id="mc-new-manifesto" placeholder="宣言 / 描述简介 (选填)">
+                        </div>
+                        <div class="col-md-2">
+                            <button class="btn btn-success w-100 shadow-sm rounded-pill fw-bold" onclick="addCandidate()">入库</button>
+                        </div>
+                    </div>
+                </div>
+
+                <h6 class="fw-bold mb-2"><i class="fa-solid fa-list-check text-muted me-1"></i> 已有选项名册</h6>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle">
+                        <thead class="table-light text-muted">
+                            <tr>
+                                <th style="width: 20%;">选项名</th>
+                                <th>宣言描述</th>
+                                <th class="text-center" style="width: 15%;">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="mc-candidates-body">
+                            <tr><td colspan="3" class="text-center text-muted py-3">正在加载...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="modal fade" id="createDraftModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content glass-card border-0 shadow-lg">
-            <div class="modal-header border-0">
-                <h5 class="modal-title fw-bold"><i class="fa-solid fa-pen-nib text-primary"></i> 发起投票项目</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content glass-card border-0 shadow-lg animate__animated animate__zoomIn" style="animation-duration: 0.3s;">
+            <div class="modal-header border-0 pb-0 mt-2 mx-2">
+                <h4 class="modal-title fw-bolder text-primary"><i class="fa-solid fa-pen-ruler me-2"></i>发起 / 编辑投票项目</h4>
+                <button type="button" class="btn-close shadow-none" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body">
+
+            <div class="modal-body px-4 py-3">
+                <div class="alert alert-primary shadow-sm border-0 bg-primary-subtle text-primary py-2 mb-4 d-flex align-items-start">
+                    <i class="fa-solid fa-circle-info mt-1 me-2 fs-5"></i>
+                    <small style="line-height: 1.6;">
+                        <b class="fs-6">标准发布工作流：</b><br>
+                        1. 填写下方标题规则，点击 <b>【保存草稿】</b>。<br>
+                        2. 在列表中找到它，点击绿色的 <b>【选项】</b> 按钮录入候选人数据。<br>
+                        3. 数据就绪后，再次点击编辑，执行 <b>【立即发布】</b> 上线大厅！
+                    </small>
+                </div>
+
                 <input type="hidden" id="draft-id">
-                <div class="mb-3">
-                    <label class="form-label text-muted small">项目标题</label>
-                    <input type="text" class="form-control" id="draft-title" placeholder="请输入标题">
+
+                <div class="row g-3 mb-4">
+                    <div class="col-md-12">
+                        <label class="form-label text-dark fw-bold"><i class="fa-solid fa-heading text-muted me-1"></i> 项目标题 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control border-light shadow-sm bg-white" id="draft-title" placeholder="例如：2026年度最佳校园十佳歌手评选">
+                    </div>
+                    <div class="col-md-12">
+                        <label class="form-label text-dark fw-bold"><i class="fa-solid fa-align-left text-muted me-1"></i> 项目描述 / 规则说明</label>
+                        <textarea class="form-control border-light shadow-sm bg-white" id="draft-desc" rows="3" placeholder="请在此处详细描述本次投票的规则、背景等信息..."></textarea>
+                    </div>
                 </div>
-                <div class="mb-3">
-                    <label class="form-label text-muted small">项目描述</label>
-                    <textarea class="form-control" id="draft-desc" rows="3"></textarea>
-                </div>
-                <div class="form-check form-switch mb-2">
-                    <input class="form-check-input" type="checkbox" id="draft-multi">
-                    <label class="form-check-label text-dark">开启多选模式</label>
-                </div>
-                <div class="form-check form-switch mb-3">
-                    <input class="form-check-input" type="checkbox" id="draft-allow-update">
-                    <label class="form-check-label text-success fw-bold">允许修改选票（后悔药开关）</label>
+
+                <div class="glass-card p-3 bg-light border-0 mb-2 rounded-3">
+                    <div class="form-check form-switch mb-3 d-flex align-items-center">
+                        <input class="form-check-input me-3 shadow-sm" type="checkbox" id="draft-multi" style="transform: scale(1.3); cursor: pointer;">
+                        <label class="form-check-label text-dark fw-bold mb-0" style="cursor: pointer;" for="draft-multi">
+                            开启多选模式 <span class="badge bg-info ms-2 rounded-pill fw-normal"><i class="fa-solid fa-layer-group"></i> 允许多选</span>
+                        </label>
+                    </div>
+                    <div class="form-check form-switch d-flex align-items-center">
+                        <input class="form-check-input me-3 shadow-sm" type="checkbox" id="draft-allow-update" style="transform: scale(1.3); cursor: pointer;">
+                        <label class="form-check-label text-success fw-bold mb-0" style="cursor: pointer;" for="draft-allow-update">
+                            允许修改选票（后悔药开关） <br>
+                            <span class="text-muted small fw-normal" style="font-size: 0.8rem;">用户在截止时间前可重复投票，新选票将自动覆盖旧记录。</span>
+                        </label>
+                    </div>
                 </div>
             </div>
-            <div class="modal-footer border-0 d-flex justify-content-between">
-                <button type="button" class="btn btn-outline-info rounded-pill px-4" onclick="saveElection('draft')">保存为草稿</button>
-                <button type="button" class="btn btn-primary rounded-pill px-4" onclick="saveElection('published')">立即发布</button>
+
+            <div class="modal-footer border-0 d-flex justify-content-between px-4 pb-4">
+                <button type="button" class="btn btn-outline-secondary rounded-pill px-4 shadow-sm" data-bs-dismiss="modal"><i class="fa-solid fa-xmark me-1"></i> 取消</button>
+                <div>
+                    <button type="button" class="btn btn-info text-white rounded-pill px-4 shadow-sm me-2" onclick="saveElection('draft')">
+                        <i class="fa-solid fa-floppy-disk me-1"></i> 保存草稿
+                    </button>
+                    <button type="button" class="btn btn-primary rounded-pill px-5 shadow-sm" onclick="saveElection('published')">
+                        <i class="fa-solid fa-rocket me-1"></i> 立即发布
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -137,187 +243,256 @@
 
 {% block scripts %}
 <script>
+    let allUsersData = [];
+    let allElectionsData = [];
+
     document.addEventListener('DOMContentLoaded', () => {
         loadPendingUsers();
         loadPendingElections();
+        loadAllUsers();
     });
 
-    // --- 1. 用户审核逻辑 ---
     function loadPendingUsers() {
-        fetch('/api/admin/users/pending')
-            .then(res => res.json())
-            .then(data => {
-                const body = document.getElementById('pending-users-body');
-                document.getElementById('user-count').innerText = data.data.length;
-                body.innerHTML = data.data.map(u => `
-                    <tr>
-                        <td><span class="badge bg-light text-dark border">${u.student_id}</span></td>
-                        <td><b class="text-primary">${u.name}</b></td>
-                        <td><small>${u.department}<br>${u.major}</small></td>
-                        <td class="text-center">
-                            <button class="btn btn-success btn-sm rounded-pill px-3 me-1" onclick="handleUser(${u.id}, 'pass')">通过</button>
-                            <button class="btn btn-outline-danger btn-sm rounded-pill px-3" onclick="handleUser(${u.id}, 'reject')">驳回</button>
-                        </td>
-                    </tr>
-                `).join('');
-                if(data.data.length === 0) body.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-5">所有注册申请已处理完毕</td></tr>';
-            });
+        fetch('/api/admin/users/pending').then(res => res.json()).then(data => {
+            document.getElementById('user-count').innerText = data.data.length;
+            const body = document.getElementById('pending-users-body');
+            body.innerHTML = data.data.map(u => `
+                <tr>
+                    <td><span class="badge bg-light text-dark border">${u.student_id}</span></td>
+                    <td><b class="text-primary">${u.name}</b></td>
+                    <td><small>${u.department}<br>${u.major}</small></td>
+                    <td class="text-center">
+                        <button class="btn btn-success btn-sm rounded-pill px-3 me-1" onclick="handleUser(${u.id}, 'pass')">通过</button>
+                        <button class="btn btn-outline-danger btn-sm rounded-pill px-3" onclick="handleUser(${u.id}, 'reject')">驳回</button>
+                    </td>
+                </tr>
+            `).join('');
+            if(data.data.length === 0) body.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-5">暂无数据</td></tr>';
+        });
     }
 
     function handleUser(id, action) {
         fetch('/api/admin/users/approve', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({user_id: id, action: action})
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({user_id: id, action: action})
         }).then(res => res.json()).then(data => {
             Swal.fire('成功', data.msg, 'success');
-            loadPendingUsers();
+            loadPendingUsers(); loadAllUsers();
         });
     }
 
-    // --- 2. 提议审批逻辑 ---
+    function loadAllUsers() {
+        fetch('/api/admin/users/all').then(res => res.json()).then(data => {
+            allUsersData = data.data; renderAllUsers(allUsersData);
+        });
+    }
+
+    function renderAllUsers(users) {
+        const body = document.getElementById('all-users-body');
+        body.innerHTML = users.map(u => `
+            <tr class="${u.is_banned ? 'table-danger' : ''}">
+                <td><span class="text-muted small me-2">#${u.id}</span> <span class="badge bg-light text-dark border">${u.student_id}</span></td>
+                <td><b class="${u.is_banned ? 'text-danger text-decoration-line-through' : 'text-primary'}">${u.name}</b></td>
+                <td><small>${u.department}<br>${u.major}</small></td>
+                <td>${u.is_banned ? '<span class="badge bg-danger shadow-sm"><i class="fa-solid fa-lock"></i> 小黑屋</span>' : '<span class="badge bg-success"><i class="fa-solid fa-check"></i> 正常</span>'}</td>
+                <td class="text-center">
+                    <button class="btn btn-sm rounded-pill px-3 ${u.is_banned ? 'btn-success' : 'btn-outline-danger shadow-sm'}" onclick="directToggleBan('${u.student_id}')">
+                        <i class="fa-solid ${u.is_banned ? 'fa-unlock' : 'fa-ban'}"></i> ${u.is_banned ? '移出黑名单' : '关入小黑屋'}
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+        if(users.length === 0) body.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-5">暂无数据</td></tr>';
+    }
+
+    function filterUsers() {
+        const term = document.getElementById('user-search').value.toLowerCase();
+        renderAllUsers(allUsersData.filter(u => u.name.toLowerCase().includes(term) || u.student_id.toLowerCase().includes(term)));
+    }
+
+    function directToggleBan(identifier) {
+        fetch(`/api/admin/users/ban/${identifier}`, { method: 'POST' }).then(res => res.json()).then(data => {
+            Swal.fire('操作结果', data.msg, data.code === 200 ? 'success' : 'error'); loadAllUsers();
+        });
+    }
+
+    function banUserPrompt() {
+        Swal.fire({
+            title: '快捷封禁', input: 'text', inputPlaceholder: '输入学号', showCancelButton: true, confirmButtonText: '执行'
+        }).then((result) => {
+            if (result.isConfirmed && result.value) directToggleBan(result.value);
+        });
+    }
+
     function loadPendingElections() {
-        fetch('/api/admin/elections/pending')
-            .then(res => res.json())
-            .then(data => {
-                const list = document.getElementById('pending-elections-list');
-                document.getElementById('election-count').innerText = data.data.length;
-                list.innerHTML = data.data.map(e => `
-                    <div class="card border-0 shadow-sm mb-3 p-3 animate__animated animate__fadeIn">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h6 class="fw-bold mb-1">${e.title}</h6>
-                                <p class="small text-muted mb-0">提议人: <b>${e.proposer_name}</b> | 描述: ${e.description}</p>
-                            </div>
-                            <div class="d-flex gap-2">
-                                <button class="btn btn-primary btn-sm rounded-pill px-3" onclick="handleElection(${e.id}, 'approve')">准予发布</button>
-                                <button class="btn btn-outline-secondary btn-sm rounded-pill px-3" onclick="handleElection(${e.id}, 'reject')">拒绝</button>
-                            </div>
+        fetch('/api/admin/elections/pending').then(res => res.json()).then(data => {
+            document.getElementById('election-count').innerText = data.data.length;
+            const list = document.getElementById('pending-elections-list');
+            list.innerHTML = data.data.map(e => `
+                <div class="card border-0 shadow-sm mb-3 p-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div><h6 class="fw-bold mb-1">${e.title}</h6><p class="small text-muted mb-0">提议人: ${e.proposer_name} | ${e.description}</p></div>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-primary btn-sm rounded-pill px-3" onclick="handleElection(${e.id}, 'approve')">准予发布</button>
+                            <button class="btn btn-outline-secondary btn-sm rounded-pill px-3" onclick="handleElection(${e.id}, 'reject')">拒绝</button>
                         </div>
                     </div>
-                `).join('');
-                if(data.data.length === 0) list.innerHTML = '<p class="text-center text-muted py-5">当前没有待处理的投票提议</p>';
-            });
+                </div>
+            `).join('');
+            if(data.data.length === 0) list.innerHTML = '<p class="text-center text-muted py-5">暂无待处理</p>';
+        });
     }
 
     function handleElection(id, action) {
         if (action === 'reject') {
-            Swal.fire({
-                title: '驳回提议',
-                input: 'textarea',
-                inputLabel: '请输入驳回理由',
-                showCancelButton: true,
-                confirmButtonColor: '#d33'
-            }).then((result) => {
-                if (result.isConfirmed) sendReviewRequest(id, 'reject', result.value);
-            });
-        } else {
-            sendReviewRequest(id, 'approve');
-        }
+            Swal.fire({ title: '驳回', input: 'textarea', showCancelButton: true }).then((r) => { if (r.isConfirmed) sendReviewRequest(id, 'reject', r.value); });
+        } else { sendReviewRequest(id, 'approve'); }
     }
 
     function sendReviewRequest(id, action, feedback = '') {
         fetch('/api/admin/elections/review', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({election_id: id, action: action, feedback: feedback})
-        }).then(res => res.json()).then(data => {
-            Swal.fire('审批成功', data.msg, 'success');
-            loadPendingElections();
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({election_id: id, action: action, feedback: feedback})
+        }).then(res => res.json()).then(data => { Swal.fire('成功', data.msg, 'success'); loadPendingElections(); });
+    }
+
+    // --- 核心更新：大盘数据加载包含选项管理 ---
+    function loadAllElections() {
+        const body = document.getElementById('all-elections-body');
+        body.innerHTML = '<tr><td colspan="5" class="text-center py-4">正在检索数据...</td></tr>';
+        fetch('/api/admin/elections/all').then(res => res.json()).then(data => {
+            allElectionsData = data.data;
+            body.innerHTML = data.data.map(e => `
+                <tr id="row-${e.id}">
+                    <td><span class="text-muted small">#${e.id}</span></td>
+                    <td><b class="text-dark">${e.title}</b></td>
+                    <td><span class="badge rounded-pill ${e.status === 'published' || e.status === 'active' ? 'bg-success' : (e.status === 'draft' ? 'bg-info' : 'bg-secondary')}">${e.status.toUpperCase()}</span></td>
+                    <td id="score-${e.id}"><i class="fa-solid fa-spinner fa-spin text-muted"></i></td>
+                    <td class="text-center">
+                        <div class="btn-group">
+                            <button class="btn btn-sm btn-outline-success rounded-pill px-3 me-1 shadow-sm" title="管理项目里的候选人" onclick="openCandidateModal(${e.id}, '${e.title}')">
+                                <i class="fa-solid fa-users-viewfinder"></i> 选项录入
+                            </button>
+                            <button class="btn btn-sm btn-outline-warning rounded-pill px-3 me-1 shadow-sm" title="编辑项目规则" onclick="editElection(${e.id})">
+                                <i class="fa-solid fa-gear"></i> 设置
+                            </button>
+                            <a href="/election/${e.id}/results" class="btn btn-sm btn-outline-info rounded-pill px-2 me-1 shadow-sm" title="查看图表"><i class="fa-solid fa-chart-line"></i></a>
+                            <a href="/api/admin/export/${e.id}" class="btn btn-sm btn-primary rounded-pill px-3 shadow-sm"><i class="fa-solid fa-file-csv"></i> 导出</a>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+            data.data.forEach(e => fetchScore(e.id));
+            if(data.data.length === 0) body.innerHTML = '<tr><td colspan="5" class="text-center py-5">暂无数据</td></tr>';
         });
     }
 
-    // --- 3. 数据审计与评分加载 ---
-    function loadAllElections() {
-        const body = document.getElementById('all-elections-body');
-        body.innerHTML = '<tr><td colspan="5" class="text-center py-4">正在检索全量项目...</td></tr>';
+    function fetchScore(eid) {
+        fetch(`/api/vote/statistics/${eid}`).then(res => res.json()).then(data => {
+            const scoreBox = document.getElementById(`score-${eid}`);
+            if (data.code === 200) {
+                const sec = data.data.security;
+                let color = sec.level === '低' ? 'success' : (sec.level === '中' ? 'warning' : 'danger');
+                scoreBox.innerHTML = `<span class="fw-bold text-${color} me-1">${sec.score}</span><span class="badge bg-${color}-subtle text-${color} x-small border border-${color}-subtle">${sec.level}风险</span>`;
+            } else { scoreBox.innerHTML = '<span class="text-muted small">暂无</span>'; }
+        });
+    }
 
-        fetch('/api/admin/elections/all')
+    // =====================================
+    // 新增：选项(候选人)管理交互逻辑
+    // =====================================
+    function openCandidateModal(eid, title) {
+        document.getElementById('mc-election-id').value = eid;
+        document.getElementById('mc-election-title').innerText = title;
+        document.getElementById('mc-new-name').value = '';
+        document.getElementById('mc-new-manifesto').value = '';
+
+        const modalEl = document.getElementById('manageCandidatesModal');
+        document.body.appendChild(modalEl);
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        modal.show();
+
+        loadCandidates(eid);
+    }
+
+    function loadCandidates(eid) {
+        const body = document.getElementById('mc-candidates-body');
+        body.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-3"><i class="fa-solid fa-spinner fa-spin"></i> 读取中...</td></tr>';
+
+        fetch(`/api/admin/elections/${eid}/candidates`)
             .then(res => res.json())
             .then(data => {
-                body.innerHTML = data.data.map(e => {
-                    return `
-                    <tr id="row-${e.id}">
-                        <td><span class="text-muted small">#${e.id}</span></td>
-                        <td><b class="text-dark">${e.title}</b></td>
-                        <td>
-                            <span class="badge rounded-pill ${getStatusClass(e.status)}">
-                                ${e.status.toUpperCase()}
-                            </span>
-                        </td>
-                        <td id="score-${e.id}"><i class="fa-solid fa-spinner fa-spin text-muted"></i> 分析中...</td>
+                if (data.data.length === 0) {
+                    body.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-4"><i class="fa-solid fa-inbox me-2"></i>暂无选项，请在上方输入添加</td></tr>';
+                    return;
+                }
+                body.innerHTML = data.data.map(c => `
+                    <tr>
+                        <td class="fw-bold text-dark text-break">${c.name}</td>
+                        <td class="text-muted small text-break">${c.manifesto || '-'}</td>
                         <td class="text-center">
-                            <div class="btn-group">
-                                <a href="/election/${e.id}/results" class="btn btn-sm btn-outline-info rounded-pill px-2 me-1" title="查看大屏">
-                                    <i class="fa-solid fa-chart-line"></i>
-                                </a>
-                                <a href="/api/admin/export/${e.id}" class="btn btn-sm btn-primary rounded-pill px-3 shadow-sm">
-                                    <i class="fa-solid fa-file-csv me-1"></i> 导出
-                                </a>
-                            </div>
+                            <button class="btn btn-sm btn-outline-danger rounded-pill shadow-sm" onclick="deleteCandidate(${c.id}, ${eid})" title="移除此选项">
+                                <i class="fa-solid fa-trash-can"></i>
+                            </button>
                         </td>
                     </tr>
-                    `;
-                }).join('');
-
-                data.data.forEach(e => fetchScore(e.id));
-
-                if(data.data.length === 0) body.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-5">暂无已审核项目</td></tr>';
+                `).join('');
             });
     }
 
-    function fetchScore(eid) {
-        fetch(`/api/vote/statistics/${eid}`)
-            .then(res => res.json())
-            .then(data => {
-                const scoreBox = document.getElementById(`score-${eid}`);
-                if (data.code === 200) {
-                    const sec = data.data.security;
-                    let color = sec.level === '低' ? 'success' : (sec.level === '中' ? 'warning' : 'danger');
-                    scoreBox.innerHTML = `
-                        <div class="d-flex align-items-center">
-                            <span class="fw-bold text-${color} me-2">${sec.score}</span>
-                            <span class="badge bg-${color}-subtle text-${color} x-small border border-${color}-subtle">${sec.level}风险</span>
-                        </div>
-                    `;
-                } else {
-                    scoreBox.innerHTML = '<span class="text-muted small">数据不足</span>';
-                }
-            });
+    function addCandidate() {
+        const eid = document.getElementById('mc-election-id').value;
+        const name = document.getElementById('mc-new-name').value.trim();
+        const manifesto = document.getElementById('mc-new-manifesto').value.trim();
+
+        if (!name) return Swal.fire('提示', '请填写选项的名称！', 'warning');
+
+        fetch('/api/admin/candidates/save', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ election_id: eid, name: name, manifesto: manifesto })
+        }).then(res => res.json()).then(data => {
+            if (data.code === 200) {
+                document.getElementById('mc-new-name').value = '';
+                document.getElementById('mc-new-manifesto').value = '';
+                loadCandidates(eid); // 刷新局部列表
+            } else {
+                Swal.fire('失败', data.msg, 'error');
+            }
+        });
     }
 
-    function getStatusClass(status) {
-        switch(status) {
-            case 'active': case 'published': return 'bg-success';
-            case 'ended': return 'bg-secondary';
-            case 'draft': return 'bg-info';
-            default: return 'bg-dark';
-        }
-    }
-
-    // --- 新增：黑名单管理 ---
-    function banUserPrompt() {
+    function deleteCandidate(cid, eid) {
         Swal.fire({
-            title: '小黑屋管理',
-            input: 'number',
-            inputLabel: '请输入要封禁/解封的用户 ID (可在上方列表查看)',
-            inputPlaceholder: '例如: 1',
+            title: '确定要移除该选项吗？',
+            text: "一旦有用户投给此选项，为了保证选票严谨性，系统将锁定删除功能！",
+            icon: 'warning',
             showCancelButton: true,
             confirmButtonColor: '#d33',
-            confirmButtonText: '执行封禁/解封',
+            confirmButtonText: '<i class="fa-solid fa-trash me-1"></i> 确认移除',
             cancelButtonText: '取消'
         }).then((result) => {
-            if (result.isConfirmed && result.value) {
-                fetch(`/api/admin/users/ban/${result.value}`, { method: 'POST' })
+            if (result.isConfirmed) {
+                fetch(`/api/admin/candidates/delete/${cid}`, { method: 'POST' })
                 .then(res => res.json())
                 .then(data => {
-                    Swal.fire('操作结果', data.msg, data.code === 200 ? 'success' : 'error');
+                    if(data.code === 200) {
+                        Swal.fire({toast: true, position: 'top-end', icon: 'success', title: '移除成功', showConfirmButton: false, timer: 1500});
+                        loadCandidates(eid);
+                    } else {
+                        Swal.fire('移除受阻', data.msg, 'error');
+                    }
                 });
             }
         });
     }
 
-    // --- 新增：草稿与发布管理 ---
+    // =====================================
+    // 项目设置(发版/草稿)逻辑
+    // =====================================
+    function editElection(id) {
+        const election = allElectionsData.find(e => e.id === id);
+        if (election) openCreateDraftModal(election.id, election.title, election.description || '', election.is_multi_choice, election.allow_update_vote);
+    }
+
     function openCreateDraftModal(id='', title='', desc='', isMulti=false, allowUpdate=false) {
         document.getElementById('draft-id').value = id;
         document.getElementById('draft-title').value = title;
@@ -325,40 +500,61 @@
         document.getElementById('draft-multi').checked = isMulti;
         document.getElementById('draft-allow-update').checked = allowUpdate;
 
-        const draftModal = new bootstrap.Modal(document.getElementById('createDraftModal'));
+        const modalEl = document.getElementById('createDraftModal');
+        document.body.appendChild(modalEl);
+        const draftModal = bootstrap.Modal.getOrCreateInstance(modalEl);
         draftModal.show();
     }
 
+    function closeDraftModalSafely() {
+        const modalEl = document.getElementById('createDraftModal');
+        const modalInstance = bootstrap.Modal.getInstance(modalEl);
+        if (modalInstance) modalInstance.hide();
+    }
+
     function saveElection(status) {
+        const titleInput = document.getElementById('draft-title').value.trim();
+        if (!titleInput) return Swal.fire('提示', '项目标题是必填项，不能为空哦！', 'warning');
+
         const data = {
             election_id: document.getElementById('draft-id').value || null,
-            title: document.getElementById('draft-title').value,
+            title: titleInput,
             description: document.getElementById('draft-desc').value,
             is_multi_choice: document.getElementById('draft-multi').checked,
             allow_update_vote: document.getElementById('draft-allow-update').checked,
             status: status
         };
 
-        fetch('/api/admin/elections/save', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(data)
-        }).then(res => res.json()).then(resData => {
-            if(resData.code === 200) {
-                Swal.fire('成功', resData.msg, 'success').then(() => {
-                    const modalEl = document.getElementById('createDraftModal');
-                    const modalInstance = bootstrap.Modal.getInstance(modalEl);
-                    modalInstance.hide();
-                    loadAllElections(); // 刷新列表
-                });
-            } else {
-                Swal.fire('失败', resData.msg, 'error');
-            }
-        });
+        if (status === 'published') {
+            Swal.fire({
+                title: '最终确认发布',
+                html: `即将发布 <b>${titleInput}</b><br><small class="text-danger mt-2 d-block">发布前请确保您已经通过绿色的【选项录入】按钮添加了候选人，否则选民点进去将没有选项可投！</small>`,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#4776E6',
+                confirmButtonText: '确认发布',
+                preConfirm: () => fetch('/api/admin/elections/save', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data) }).then(res => res.json())
+            }).then((result) => {
+                if (result.isConfirmed && result.value.code === 200) {
+                    Swal.fire('发布成功', '', 'success').then(() => { closeDraftModalSafely(); loadAllElections(); });
+                } else if (result.isConfirmed) {
+                    Swal.fire('失败', result.value.msg, 'error');
+                }
+            });
+        } else {
+            fetch('/api/admin/elections/save', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data) })
+            .then(res => res.json()).then(resData => {
+                if(resData.code === 200) {
+                    Swal.fire({toast: true, position: 'top-end', icon: 'success', title: '草稿已保存', showConfirmButton: false, timer: 1500});
+                    closeDraftModalSafely(); loadAllElections();
+                } else { Swal.fire('失败', resData.msg, 'error'); }
+            });
+        }
     }
 </script>
 
 <style>
     .x-small { font-size: 0.7rem; }
+    #user-search:focus { box-shadow: none; border-color: #dee2e6; }
 </style>
 {% endblock %}

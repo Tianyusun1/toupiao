@@ -67,14 +67,25 @@ def approve_user():
 
 
 # ==========================================
-# [新增] 黑名单封禁接口
+# [修改] 黑名单封禁接口 (现已支持直接输入学号)
 # ==========================================
-@admin_bp.route('/users/ban/<int:user_id>', methods=['POST'])
+@admin_bp.route('/users/ban/<identifier>', methods=['POST'])
 @login_required
 @admin_required
-def toggle_ban_user(user_id):
-    """将违规用户关入或移出小黑屋"""
-    user = User.query.get_or_404(user_id)
+def toggle_ban_user(identifier):
+    """将违规用户关入或移出小黑屋 (支持输入学号或数据库ID)"""
+
+    # 1. 尝试通过学号查询
+    user = User.query.filter_by(student_id=str(identifier)).first()
+
+    # 2. 如果按学号找不到，尝试按数据库自增 ID 查询（兼容之前的逻辑）
+    if not user and identifier.isdigit():
+        user = User.query.get(int(identifier))
+
+    # 3. 如果还是找不到，返回详细错误信息
+    if not user:
+        return jsonify({'code': 404, 'msg': f'未找到标识为 {identifier} 的用户，请检查学号是否正确'}), 404
+
     if user.role == 'admin':
         return jsonify({'code': 400, 'msg': '系统限制：不能封禁管理员账号'}), 400
 
@@ -83,7 +94,25 @@ def toggle_ban_user(user_id):
     db.session.commit()
 
     action_msg = "封禁" if user.is_banned else "解封"
-    return jsonify({'code': 200, 'msg': f'已成功{action_msg}用户：{user.name}'})
+    return jsonify({'code': 200, 'msg': f'已成功{action_msg}用户：{user.name} (学号: {user.student_id})'})
+
+
+@admin_bp.route('/users/all', methods=['GET'])
+@login_required
+@admin_required
+def get_all_users():
+    """获取所有已通过审核的学生列表（包含他们的封禁状态）"""
+    users = User.query.filter_by(is_approved=True, role='student').all()
+    data = [{
+        'id': u.id,
+        'student_id': u.student_id,
+        'name': u.name,
+        'department': u.department,
+        'major': u.major,
+        'class': u.class_name,
+        'is_banned': u.is_banned  # 将小黑屋状态传给前端
+    } for u in users]
+    return jsonify({'code': 200, 'data': data})
 
 
 # ================= 2. 投票项目管理（提议流与全列表） =================
@@ -114,13 +143,17 @@ def get_pending_elections():
 @login_required
 @admin_required
 def get_all_elections():
-    """获取所有已通过审核的项目，用于前端‘数据审计’列表展示"""
+    """获取所有已通过审核的项目，用于前端‘数据审计’列表展示及编辑回显"""
     elections = Election.query.filter_by(review_status='approved').all()
     data = [{
         'id': e.id,
         'title': e.title,
         'status': e.status,  # active, draft, ended 等
-        'end_time': e.end_time.strftime('%Y-%m-%d %H:%M') if e.end_time else '长期有效'
+        'end_time': e.end_time.strftime('%Y-%m-%d %H:%M') if e.end_time else '长期有效',
+        # --- 下面这三个字段是新增的，用于编辑弹窗数据回显 ---
+        'description': e.description,
+        'is_multi_choice': e.is_multi_choice,
+        'allow_update_vote': e.allow_update_vote
     } for e in elections]
     return jsonify({'code': 200, 'data': data})
 
@@ -176,14 +209,14 @@ def save_election():
         return jsonify({'code': 400, 'msg': '项目标题不能为空'}), 400
 
     if eid:
-        # 场景 A：继续编辑草稿
+        # 场景 A：继续编辑草稿或已有项目
         election = Election.query.get_or_404(eid)
         election.title = title
         election.description = description
         election.status = status
         election.allow_update_vote = allow_update
         election.is_multi_choice = is_multi_choice
-        msg = '草稿已更新' if status == 'draft' else '项目已正式发布'
+        msg = '草稿已更新' if status == 'draft' else '项目已正式发布/更新'
 
         if status == 'published' and not election.start_time:
             election.start_time = datetime.utcnow()
@@ -252,6 +285,61 @@ def export_election_data(election_id):
 
 
 # ================= 4. 候选人/选项管理 =================
+
+@admin_bp.route('/elections/<int:election_id>/candidates', methods=['GET'])
+@login_required
+@admin_required
+def get_election_candidates(election_id):
+    """获取某个投票项目下的所有选项"""
+    candidates = Candidate.query.filter_by(election_id=election_id).all()
+    data = [{
+        'id': c.id,
+        'name': c.name,
+        'manifesto': c.manifesto
+    } for c in candidates]
+    return jsonify({'code': 200, 'data': data})
+
+
+@admin_bp.route('/candidates/save', methods=['POST'])
+@login_required
+@admin_required
+def save_candidate():
+    """管理员添加选项"""
+    data = request.get_json()
+    election_id = data.get('election_id')
+    name = data.get('name')
+    manifesto = data.get('manifesto', '')
+
+    if not name or not election_id:
+        return jsonify({'code': 400, 'msg': '选项名称不能为空'}), 400
+
+    candidate = Candidate(
+        election_id=election_id,
+        name=name,
+        manifesto=manifesto,
+        is_qualified=True  # 管理员在后台直接添加的选项，默认免审通过
+    )
+    db.session.add(candidate)
+    db.session.commit()
+    return jsonify({'code': 200, 'msg': '选项添加成功'})
+
+
+@admin_bp.route('/candidates/delete/<int:cid>', methods=['POST'])
+@login_required
+@admin_required
+def delete_candidate(cid):
+    """删除某个选项"""
+    candidate = Candidate.query.get_or_404(cid)
+
+    # 核心安全防范：如果这个选项已经有人投票了，绝对不能删！否则会引发严重的数据库外键异常或计票崩溃
+    has_votes = VoteRecord.query.filter_by(candidate_id=cid).first()
+    if has_votes:
+        return jsonify({'code': 400, 'msg': '该选项已有用户投票记录，系统禁止删除！'}), 400
+
+    db.session.delete(candidate)
+    db.session.commit()
+    return jsonify({'code': 200, 'msg': '选项已成功移除'})
+
 
 @admin_bp.route('/candidates/review', methods=['POST'])
 @login_required
