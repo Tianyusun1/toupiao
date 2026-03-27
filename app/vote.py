@@ -1,6 +1,7 @@
 import os
 import json
 import functools
+import uuid  # 新增：用于生成防冲突的唯一文件名
 from datetime import datetime
 from werkzeug.utils import secure_filename
 from flask import Blueprint, request, jsonify, session, current_app
@@ -53,11 +54,17 @@ def rate_limit(limit=1, period=60, key_prefix='rate_limit'):
 def save_upload_file(file):
     """辅助函数：保存上传的图片文件并返回相对路径URL"""
     if file and file.filename:
-        upload_folder = os.path.join(request.root_path, 'static', 'uploads')
+        # 修复 Bug 2: 使用 current_app.root_path，确保一定保存在 app/static/uploads 下
+        upload_folder = os.path.join(current_app.root_path, 'static', 'uploads')
         os.makedirs(upload_folder, exist_ok=True)
 
-        filename = secure_filename(file.filename)
-        unique_filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{filename}"
+        # 修复 Bug 1: 手动提取文件后缀，防止纯中文名被 secure_filename 过滤成空
+        ext = os.path.splitext(file.filename)[1]  # 提取后缀，例如 .png 或 .jpg
+        if not ext:  # 防御性处理，如果没有后缀就给个默认的
+            ext = '.png'
+
+        # 拼接新的安全文件名：当前时间 + uuid前8位防止极小概率并发冲突 + 原始后缀
+        unique_filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}{ext}"
         file_path = os.path.join(upload_folder, unique_filename)
 
         file.save(file_path)
